@@ -1,3 +1,15 @@
+# --- openmot-serve ---
+# MOTChallenge data (CC BY-NC-SA 3.0): download with data/download_mot.sh, never commit
+data/MOT17/
+data/MOT20/
+data/results/
+# Model weights and exported engines
+*.pt
+*.pth
+*.onnx
+*.engine
+runs/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
