@@ -9,6 +9,11 @@ data/results/
 *.onnx
 *.engine
 runs/
+# graphify intermediate files (graph.json and GRAPH_REPORT.md stay trackable)
+graphify-out/.graphify_*
+graphify-out/cache/
+graphify-out/cost.json
+graphify-out/graph.html
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

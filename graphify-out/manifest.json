@@ -1,0 +1,32 @@
+{
+  "data/download_mot.sh": {
+    "mtime": 1793775787.1594899,
+    "seen": 1793777452.3845053,
+    "ast_hash": "0795a1bd7b40de46e06cae6f3195d54a",
+    "semantic_hash": "0795a1bd7b40de46e06cae6f3195d54a"
+  },
+  "openspec/config.yaml": {
+    "mtime": 1793776700.136387,
+    "seen": 1793777452.384508,
+    "ast_hash": "500a0a16229f8fd0848dc7cff85d21e9",
+    "semantic_hash": "500a0a16229f8fd0848dc7cff85d21e9"
+  },
+  "CONTEXT.md": {
+    "mtime": 1793775787.145488,
+    "seen": 1793777452.3845088,
+    "ast_hash": "4734830187170bebc0a43fb3ae0101b6",
+    "semantic_hash": "4734830187170bebc0a43fb3ae0101b6"
+  },
+  "README.md": {
+    "mtime": 1793775787.1554894,
+    "seen": 1793777452.38451,
+    "ast_hash": "c416b976c76390d30978c1f4419ee9eb",
+    "semantic_hash": "c416b976c76390d30978c1f4419ee9eb"
+  },
+  "docs/adr/0001-detector-yolox-for-license.md": {
+    "mtime": 1793775787.1664908,
+    "seen": 1793777452.3845108,
+    "ast_hash": "cdcf5da6ddf017b4bf979784cc0ac31d",
+    "semantic_hash": "cdcf5da6ddf017b4bf979784cc0ac31d"
+  }
+}
