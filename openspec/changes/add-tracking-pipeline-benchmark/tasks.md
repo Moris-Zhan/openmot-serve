@@ -18,7 +18,7 @@
 - [x] 3.3 實作 TOML 設定載入（偵測信心門檻、匹配門檻、Track 保留幀數與預設值）與中繼檔寫入（參數、權重雜湊、推論精度）；驗證測試涵蓋「自訂參數被使用且被記錄」與「預設值被記錄」
 - [x] 3.4 實作偵測器封裝（權重雜湊驗證、letterbox 前處理、FP16、NMS、信心下限 0.1、只保留人物類別）；驗證「只保留人物」的單元測試通過，且 `-m gpu` 測試對一張合成影像能回傳形狀正確的 Detection 陣列
 - [x] 3.5 實作 `track_sequence(frames_dir, config)` 與命令列 `python -m tracking.run`，輸出先寫暫存檔再改名；驗證測試涵蓋「有效資料夾產生 Result」與「資料夾不存在、為空、含無法讀取影格時結束碼非 0 且不留下 Result 檔」
-- [ ] 3.6 在 `docs/tracking.md` 以繁體中文說明追蹤指令與設定檔；驗證文件中的範例指令能照字面執行（以合成影格資料夾）
+- [x] 3.6 在 `docs/tracking.md` 以繁體中文說明追蹤指令與設定檔；驗證文件中的範例指令能照字面執行（以合成影格資料夾）
 
 ## 4. 評測（benchmark-evaluation）
 
@@ -33,7 +33,7 @@
 
 ## 5. 第一次真實 Benchmark Run 與整合驗證
 
-- [ ] 5.1 執行 `./data/download_mot.sh` 下載 MOT17；驗證 `data/MOT17/train` 下有 7 個序列各 3 個偵測器版本，且 `git status` 未出現資料檔
+- [ ] 5.1 執行 `./data/download_mot.sh` 下載 MOT17；驗證 `data/MOT17/train` 下有 7 個 FRCNN 訓練序列（design D4 只使用 FRCNN 版本，GT 三版相同），且 `git status` 未出現資料檔
 - [ ] 5.2 在真實 MOT17 的 Validation Half 上執行「GT 當預測」自我檢查（`pytest -m data`）；驗證 HOTA、MOTA、IDF1 皆接近 100，作為切分、重新編號與計分流程正確的證據
 - [ ] 5.3 執行完整的 `uv run python -m eval.run --precision fp16`；驗證 `summary.json` 與 Markdown 表格產生，並以快取的 Detection 重跑一次，兩次的追蹤輸出逐位元組相同、分數完全相同
 - [ ] 5.4 把實際分數填入 README 的「Tracking accuracy」FP16 那一列（INT8 維持 TBD），在表格旁標註「COCO 預訓練權重，未針對 MOT17 微調」，並勾選路線圖 v0.1；驗證 README 的數字與 `summary.json` 逐項相符
