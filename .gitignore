@@ -1,6 +1,7 @@
 # --- openmot-serve ---
 # MOTChallenge data (CC BY-NC-SA 3.0): download with data/download_mot.sh, never commit
 data/MOT17/
+data/MOT17_sample/
 data/MOT20/
 data/results/
 # Model weights and exported engines
