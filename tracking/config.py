@@ -1,11 +1,10 @@
 import json
-import os
-import tempfile
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
 from tracking.bytetrack import TrackerParams
+from tracking.files import write_text_atomic
 
 SUPPORTED_PRECISIONS = ("fp16", "fp32")
 _FLOAT_KEYS = ("detection_threshold", "match_threshold")
@@ -87,13 +86,4 @@ def _metadata_document(metadata: RunMetadata) -> dict[str, object]:
 
 
 def write_metadata(path: Path, metadata: RunMetadata) -> None:
-    text = json.dumps(_metadata_document(metadata), indent=2, sort_keys=True) + "\n"
-    descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
-    try:
-        os.fchmod(descriptor, 0o644)
-        with os.fdopen(descriptor, "w") as handle:
-            handle.write(text)
-        os.replace(temporary, path)
-    except BaseException:
-        Path(temporary).unlink(missing_ok=True)
-        raise
+    write_text_atomic(path, json.dumps(_metadata_document(metadata), indent=2, sort_keys=True) + "\n")
