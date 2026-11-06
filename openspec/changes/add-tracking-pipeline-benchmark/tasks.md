@@ -13,8 +13,8 @@
 
 ## 3. 序列追蹤（sequence-tracking）
 
-- [ ] 3.1 先寫測試再實作 MOTChallenge 結果的格式化與解析函式；驗證測試涵蓋「10 個欄位」「Frame 與 Identity 為正整數」「Frame 從 1 起算」，並以 TrackEval 讀取產出檔不丟棄任何一行
-- [ ] 3.2 先寫測試再移植 ByteTrack 核心（恆速 Kalman 濾波、高低信心兩階段關聯、IoU 匹配改用 scipy、Track 保留幀數；檔頭保留 MIT 授權聲明）；驗證合成 Detection 上的測試涵蓋 Identity 持續、短暫遮擋後沿用、Track 終止後 Identity 不被重用、相同輸入兩次輸出逐位元組相同
+- [x] 3.1 先寫測試再實作 MOTChallenge 結果的格式化與解析函式；驗證測試涵蓋「10 個欄位」「Frame 與 Identity 為正整數」「Frame 從 1 起算」，並以 TrackEval 讀取產出檔不丟棄任何一行
+- [x] 3.2 先寫測試再移植 ByteTrack 核心（恆速 Kalman 濾波、高低信心兩階段關聯、IoU 匹配改用 scipy、Track 保留幀數；檔頭保留 MIT 授權聲明）；驗證合成 Detection 上的測試涵蓋 Identity 持續、短暫遮擋後沿用、Track 終止後 Identity 不被重用、相同輸入兩次輸出逐位元組相同
 - [ ] 3.3 實作 TOML 設定載入（偵測信心門檻、匹配門檻、Track 保留幀數與預設值）與中繼檔寫入（參數、權重雜湊、推論精度）；驗證測試涵蓋「自訂參數被使用且被記錄」與「預設值被記錄」
 - [ ] 3.4 實作偵測器封裝（權重雜湊驗證、letterbox 前處理、FP16、NMS、信心下限 0.1、只保留人物類別）；驗證「只保留人物」的單元測試通過，且 `-m gpu` 測試對一張合成影像能回傳形狀正確的 Detection 陣列
 - [ ] 3.5 實作 `track_sequence(frames_dir, config)` 與命令列 `python -m tracking.run`，輸出先寫暫存檔再改名；驗證測試涵蓋「有效資料夾產生 Result」與「資料夾不存在、為空、含無法讀取影格時結束碼非 0 且不留下 Result 檔」

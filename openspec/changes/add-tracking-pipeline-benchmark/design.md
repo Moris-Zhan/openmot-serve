@@ -35,6 +35,7 @@
 
 ### D3：自行精簡移植 ByteTrack，用 scipy 做匹配
 移植 `BYTETracker` 的核心：恆速 Kalman 濾波、高低信心兩階段關聯、IoU 匹配、Track 保留幀數。匹配改用 `scipy.optimize.linear_sum_assignment`，避免原專案對 `lap`、`cython_bbox` 的編譯依賴與 `np.float` 這類在 numpy 2 已移除的寫法。檔頭保留 MIT 授權聲明。以「狀態 + 本幀 Detection → 新狀態 + 輸出」的純函式介面實作，狀態用凍結的 dataclass，內部 numpy 陣列視為唯讀。
+*實作時的調整（授權）*：ByteTrack 的 `kalman_filter.py` 承襲自 DeepSORT（GPL-3.0），與 ADR-0001 避開 copyleft 的原則衝突，因此 Kalman 濾波器不移植該檔，改依教科書的恆速模型公式自行撰寫（`tracking/kalman.py`），只沿用 ByteTrack 公開的雜訊權重（位置 1/20、速度 1/160）。`byte_tracker.py` 與 `matching.py` 屬 ByteTrack 本身（MIT），照設計移植；授權全文在 `tracking/licenses/ByteTrack-LICENSE`。另有兩處刻意偏離上游：Identity 計數器改為每次執行獨立（從 1 起、不重用），以及超過保留幀數的遺失 Track 立即丟棄，不再多參與一輪關聯。
 *替代方案*：`boxmot`、Ultralytics tracker——皆為 AGPL，同 ADR-0001 的理由不採用；直接 vendor 原 repo——相依舊 numpy，需要大量修補。
 
 ### D4：Half 以「實體化的資料夾」表示，讓 TrackEval 與追蹤都把它當一般 Sequence
