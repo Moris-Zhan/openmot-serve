@@ -28,7 +28,7 @@ service = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["tracking*", "eval*", "app*", "worker*"]
+include = ["tracking*", "eval*", "jobs*", "app*", "worker*"]
 
 [tool.uv.sources]
 torch = { index = "pytorch-cu128" }

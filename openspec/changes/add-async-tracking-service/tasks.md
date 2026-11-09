@@ -3,7 +3,7 @@
 ## 1. 專案骨架與設定（tracking-job-api、tracking-job-execution）
 
 - [x] 1.1 在 `pyproject.toml` 加入 `service` extras（FastAPI、uvicorn、python-multipart、Celery、redis client），把 `app*`、`worker*` 納入打包，新增預設排除的 `integration` 測試標記；驗證 `python -m pytest -q` 仍全數通過，且 `python -c "import app, worker"` 可執行
-- [ ] 1.2 先寫失敗的測試，再實作環境變數設定函式（儲存根目錄、Redis URL、上傳與解壓上限、權重路徑、推論精度、鎖逾時、任務時間上限）；驗證測試涵蓋「全部有預設或必填、缺必填值與非法值都在啟動時失敗並指出變數名稱」
+- [x] 1.2 先寫失敗的測試，再實作環境變數設定函式（儲存根目錄、Redis URL、上傳與解壓上限、權重路徑、推論精度、鎖逾時、任務時間上限）；驗證測試涵蓋「全部有預設或必填、缺必填值與非法值都在啟動時失敗並指出變數名稱」
 - [ ] 1.3 確認 `tracking.sequence` 的 import 鏈是否連帶載入 torch，並依結果決定 API 映像是否需要 torch（必要時把影格檢查拆成不需 torch 的模組）；驗證在不安裝 torch 的虛擬環境中 `import app` 成功，並把決定寫回 design.md 的 D8
 
 ## 2. Job 紀錄與狀態機（tracking-job-api、tracking-job-execution）
