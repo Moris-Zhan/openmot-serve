@@ -1,5 +1,6 @@
 import hashlib
 import json
+import platform
 import subprocess
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from tracking.bytetrack import TrackerParams, run_tracker
 from tracking.detector import DetectorSettings
 from tracking.env_check import CheckOutcome, EnvReport
 from tracking.motchallenge import format_result
-from tracking.yolox import WEIGHTS_SHA256
+from tracking.yolox import WEIGHTS_ID, WEIGHTS_SHA256
 
 SEQUENCES = ("SYN-01-FRCNN", "SYN-02-FRCNN")
 LENGTH = 20
@@ -61,12 +62,14 @@ class Harness:
         self.results_root = tmp_path / "data" / "results"
         self.detector = FakeDetector()
         self.loads = 0
+        self.loaded_with: list[tuple[str, str]] = []
         for name in SEQUENCES:
             _write_sequence(self.data_root, name)
         self.dependencies = Dependencies(lambda: outcome, self._load)
 
     def _load(self, weights: Path, precision: str, device: str) -> FakeDetector:
         self.loads += 1
+        self.loaded_with.append((precision, device))
         return self.detector
 
     def run(self, run_name: str, extra: tuple[str, ...] = ()) -> int:
@@ -147,6 +150,27 @@ def test_each_half_gets_its_own_cache_entry(tmp_path: Path) -> None:
     harness.run("first")
     entries = sorted(path.name.rsplit("-", 1)[0] for path in (harness.results_root / "cache").glob("*.npz"))
     assert entries == sorted(f"{name}-{half}" for name in SEQUENCES for half in ("tuning", "validation"))
+
+
+@pytest.mark.parametrize("precision", ["fp16", "fp32"])
+def test_the_summary_matches_the_settings_actually_used(tmp_path: Path, precision: str) -> None:
+    environment = CheckOutcome(EnvReport("Test GPU 9000", "999.1", "9.9.9+cuX", "12.9", True), ())
+    harness = Harness(tmp_path, environment)
+    harness.run("first", ("--precision", precision))
+    run_dir = harness.results_root / "first"
+    summary = json.loads((run_dir / "summary.json").read_text())
+    assert summary["weights"] == {"id": WEIGHTS_ID, "sha256": WEIGHTS_SHA256}
+    assert summary["precision"] == precision == harness.loaded_with[0][0]
+    assert summary["detector"]["precision"] == precision
+    assert summary["tracker_params"] == json.loads((run_dir / "params.json").read_text())
+    assert summary["gpu"] == "Test GPU 9000"
+    assert summary["software"] == {
+        "python": platform.python_version(),
+        "numpy": np.__version__,
+        "torch": "9.9.9+cuX",
+        "cuda": "12.9",
+        "driver": "999.1",
+    }
 
 
 def test_no_validation_half_exists_while_tuning_detects(tmp_path: Path) -> None:

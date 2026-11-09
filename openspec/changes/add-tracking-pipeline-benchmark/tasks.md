@@ -28,7 +28,7 @@
 - [x] 4.4 先寫測試再實作 Detection 快取（`.npz`，鍵含權重雜湊、輸入尺寸、精度、NMS 設定）；驗證相同鍵命中、任一鍵值改變即未命中
 - [x] 4.5 先寫測試再實作參數調校（在 Tuning Half 的快取上掃描約 24 組參數，以合併 HOTA 選最佳並寫 `params.json`）；驗證調校結束後磁碟上不存在任何 Validation Half 目錄，且調校函式只接受 Tuning Half 的型別
 - [x] 4.6 實作單一指令 `uv run python -m eval.run`（環境檢查 → Tuning Half 偵測與調校 → Validation Half 偵測、追蹤、計分 → 寫 `summary.json` 與 Markdown 表格）；驗證缺少 MOT17 時結束碼非 0 並提示 `data/download_mot.sh`，並在合成資料根目錄上連跑兩次後 `git status --porcelain` 無新增項目、原始資料不變
-- [ ] 4.7 確認 `summary.json` 記錄權重雜湊、推論精度、最終參數、軟體版本與 GPU 型號；驗證測試比對摘要內容與該次實際設定一致
+- [x] 4.7 確認 `summary.json` 記錄權重雜湊、推論精度、最終參數、軟體版本與 GPU 型號；驗證測試比對摘要內容與該次實際設定一致
 - [ ] 4.8 在 `docs/evaluation.md` 以繁體中文說明切分規則、調參流程與一個指令的使用方式；驗證文件中的指令能照字面執行
 
 ## 5. 第一次真實 Benchmark Run 與整合驗證
