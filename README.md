@@ -2,7 +2,7 @@
 
 Multi-object tracking (MOT17/MOT20) as a production service: FastAPI + Docker + Kubernetes + CI/CD, evaluated with HOTA.
 
-> **Status: planning (pre-v0.1).** Nothing runs yet. Everything below marked _planned_ is the design this repository is being built against. Design decisions live in [`docs/adr/`](docs/adr/); domain terms are defined in [`CONTEXT.md`](CONTEXT.md).
+> **Status: v0.1 done — tracking pipeline and benchmark.** `python -m eval.run` tunes on the MOT17 tuning half and reports HOTA / MOTA / IDF1 on the validation half (see [`docs/evaluation.md`](docs/evaluation.md)). The API, worker, containers and Kubernetes parts below are still _planned_ and are the design this repository is being built against. Design decisions live in [`docs/adr/`](docs/adr/); domain terms are defined in [`CONTEXT.md`](CONTEXT.md).
 
 ## What this project demonstrates
 
