@@ -36,7 +36,7 @@
 - [x] 5.1 執行 `./data/download_mot.sh` 下載 MOT17；驗證 `data/MOT17/train` 下有 7 個 FRCNN 訓練序列（design D4 只使用 FRCNN 版本，GT 三版相同），且 `git status` 未出現資料檔
 - [x] 5.2 在真實 MOT17 的 Validation Half 上執行「GT 當預測」自我檢查（`pytest -m data`）；驗證 HOTA、MOTA、IDF1 皆接近 100，作為切分、重新編號與計分流程正確的證據
 - [x] 5.3 執行完整的 `uv run python -m eval.run --precision fp16`；驗證 `summary.json` 與 Markdown 表格產生，並以快取的 Detection 重跑一次，兩次的追蹤輸出逐位元組相同、分數完全相同
-- [ ] 5.4 把實際分數填入 README 的「Tracking accuracy」FP16 那一列（INT8 維持 TBD），在表格旁標註「COCO 預訓練權重，未針對 MOT17 微調」，並勾選路線圖 v0.1；驗證 README 的數字與 `summary.json` 逐項相符
+- [x] 5.4 把實際分數填入 README 的「Tracking accuracy」FP16 那一列（INT8 維持 TBD），在表格旁標註「COCO 預訓練權重，未針對 MOT17 微調」，並勾選路線圖 v0.1；驗證 README 的數字與 `summary.json` 逐項相符
 - [ ] 5.5 執行預設的完整測試（不含 `gpu`、`data`）與 `openspec validate add-tracking-pipeline-benchmark --strict`；驗證兩者皆通過
 
 ## Workflow follow-up

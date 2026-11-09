@@ -118,8 +118,10 @@ MOT20 is evaluated after v0.5.
 
 | Detector | Tracker | Precision | HOTA | MOTA | IDF1 |
 |---|---|---|---|---|---|
-| YOLOX | ByteTrack | FP16 | TBD | TBD | TBD |
+| YOLOX | ByteTrack | FP16 | 50.78 | 46.14 | 59.82 |
 | YOLOX | ByteTrack | INT8 | TBD | TBD | TBD |
+
+COCO 預訓練權重，未針對 MOT17 微調；數字不可與 ByteTrack 論文並列比較。7 個 FRCNN 訓練序列的合併分數，重現方式見 [`docs/evaluation.md`](docs/evaluation.md)。
 
 ### Serving performance — RTX 5090
 
@@ -135,10 +137,10 @@ MOT20 is evaluated after v0.5.
 ## Roadmap
 
 ### v0.1 — Tracking pipeline and benchmark
-- [ ] Verify CUDA / PyTorch on the target GPU (RTX 5090, CUDA 12.8+)
-- [ ] YOLOX detection + ByteTrack tracking on MOT17 image sequences
-- [ ] Tuning / validation half split
-- [ ] HOTA, MOTA, IDF1 on the validation half with TrackEval
+- [x] Verify CUDA / PyTorch on the target GPU (RTX 5090, CUDA 12.8+)
+- [x] YOLOX detection + ByteTrack tracking on MOT17 image sequences
+- [x] Tuning / validation half split
+- [x] HOTA, MOTA, IDF1 on the validation half with TrackEval
 
 ### v0.2 — Async service and containers
 - [ ] Tracking-job API (`/jobs`, `/jobs/{id}`, `/jobs/{id}/result`)
