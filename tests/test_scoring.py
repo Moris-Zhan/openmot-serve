@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pytest
 
+import eval.vendor.trackeval as trackeval
+
 from eval.scoring import ScoreReport, Scores, ScoringError, score_sequences
 from tracking.motchallenge import ResultRow, format_result
 
@@ -147,3 +149,13 @@ def test_inputs_are_not_modified(tmp_path: Path) -> None:
     before = (result.read_bytes(), (sequence / "gt" / "gt.txt").read_bytes())
     score_sequences({"SYN-01": sequence}, {"SYN-01": result}, tmp_path / "work")
     assert (result.read_bytes(), (sequence / "gt" / "gt.txt").read_bytes()) == before
+
+
+def test_a_scoring_failure_leaves_no_log_file_in_the_vendored_directory(tmp_path: Path) -> None:
+    sequence = _write_sequence(tmp_path / "halves", "SYN-01")
+    seqinfo = sequence / "seqinfo.ini"
+    seqinfo.write_text(seqinfo.read_text().replace(f"seqLength={FRAME_COUNT}", "seqLength=10"))
+    result = _write_result(tmp_path / "results", "SYN-01", _rows(range(1, 11)))
+    with pytest.raises(ScoringError):
+        score_sequences({"SYN-01": sequence}, {"SYN-01": result}, tmp_path / "work")
+    assert not (Path(trackeval.__file__).parent.parent / "error_log.txt").exists()

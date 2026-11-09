@@ -106,6 +106,7 @@ def score_sequences(
     evaluator = Evaluator(
         {
             "USE_PARALLEL": False,
+            "LOG_ON_ERROR": None,
             "PRINT_RESULTS": False,
             "PRINT_CONFIG": False,
             "TIME_PROGRESS": False,
