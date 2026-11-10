@@ -55,7 +55,7 @@ CUDA 在 fork 出來的子行程中容易出問題，所以 worker 用 solo pool
 儲存根目錄、Redis URL、上傳大小與解壓總量上限、權重路徑、推論精度、鎖逾時與任務時間上限都由環境變數提供，集中在一個設定函式中解析與驗證，缺值或非法值在啟動時就失敗並指出是哪一個變數。追蹤參數 v0.2 使用 `TrackerParams` 預設值，不開放每個 Job 自訂（避免未驗證的輸入影響結果與 v0.1 的可重現性）。
 
 ### D8：映像與 compose
-- 基底為 `python:3.11-slim`，用 `uv pip install` 安裝；worker 映像安裝含 torch（cu128）的相依，不內含 CUDA 工具鏈，GPU 由 NVIDIA Container Toolkit 掛入。api 映像盡量不含 torch：實作時先確認 API 用到的 `tracking.sequence` 是否會連帶 import torch，若會，就把 API 需要的影格檢查獨立成不需要 torch 的小模組，而不是讓 API 映像背上數 GB 的相依。
+- 基底為 `python:3.11-slim`，用 `uv pip install` 安裝；worker 映像安裝含 torch（cu128）的相依，不內含 CUDA 工具鏈，GPU 由 NVIDIA Container Toolkit 掛入。api 映像不含 torch。已驗證（任務 1.3）：`app`、`worker`、`jobs.settings`、`tracking.sequence`、`tracking.config`、`tracking.motchallenge` 都不會 import torch，在沒有 torch 的乾淨虛擬環境中可正常 import（環境約 358 MB，含 torch 的開發環境約 6.9 GB），因此不需要拆出獨立模組，並由測試守住「這些模組不得載入 torch」。但 `pyproject.toml` 的核心依賴包含 torch，所以 api 映像要用 `uv pip install --no-deps .` 加上明確的依賴清單（numpy、scipy、opencv-python-headless 與 `service` extras），不能直接安裝整個專案；清單與 pyproject 的對應由任務 6.1 檢查。
 - 權重不進映像：以唯讀 bind mount 掛入，worker 載入時驗證 SHA-256。`.dockerignore` 排除 `data/`、`models/`、`.git`、`*.pth`。
 - compose 有三個服務：`redis`（啟用 AOF 並掛 volume，重建容器不丟狀態）、`api`、`worker`（以 compose 的 GPU 預約宣告取得 NVIDIA 裝置）。`api` 與 `worker` 依 Redis 的健康檢查啟動；每個服務都有自己的健康檢查（API 打 `/health`，worker 用 Celery 的 ping，Redis 用 `redis-cli ping`）。api 與 worker 掛載同一個具名 volume。
 
@@ -74,4 +74,3 @@ CUDA 在 fork 出來的子行程中容易出問題，所以 worker 用 solo pool
 ## Open Questions
 
 - 解壓上限與任務時間上限的預設值，要依實際 MOT17 序列（最大約 1050 幀、單 Job 約數十秒到數分鐘）量測後再定，數字不影響 spec 與任務拆分。
-- API 映像是否需要 torch（見 D8）要看 `tracking.sequence` 的 import 關係，實作時確認即可。
