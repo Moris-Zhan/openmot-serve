@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from app.upload import UploadLimits, UploadRejected, UploadTooLarge, unpack_upload
+from jobs.layout import StorageLayout, publish_frames, staged_frames
 from tracking.sequence import list_frames
 
 LIMITS = UploadLimits(max_upload_bytes=1_000_000, max_unpacked_bytes=2_000_000)
@@ -220,3 +221,15 @@ def test_a_failed_upload_does_not_disturb_files_already_in_the_staging_folder_pa
     with pytest.raises(UploadRejected):
         _unpack(b"nope", staging)
     assert sibling.read_text() == "keep"
+
+
+def test_an_unpacked_upload_survives_publishing_and_is_readable_as_a_sequence(tmp_path: Path) -> None:
+    layout = StorageLayout(tmp_path / "storage")
+    frames = _frames(7)
+    with staged_frames(layout) as staging:
+        assert _unpack(_archive(frames), staging) == 7
+        published = publish_frames(layout, "job-1", staging)
+    listed = list_frames(published)
+    assert [path.name for path in listed] == sorted(frames)
+    assert all(path.read_bytes() == frames[path.name] for path in listed)
+    assert list((layout.root / "staging").iterdir()) == []
