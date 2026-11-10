@@ -1,5 +1,7 @@
+import signal
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 
@@ -24,6 +26,29 @@ class WorkerContext:
     metadata: RunMetadata
     owner: str
     lock_timeout_seconds: int
+    time_limit_seconds: int | None = None
+
+
+class JobTimedOut(Exception):
+    pass
+
+
+@contextmanager
+def _within_time_limit(seconds: int | None) -> Iterator[None]:
+    if seconds is None:
+        yield
+        return
+
+    def on_alarm(signal_number: int, frame: object) -> None:
+        raise JobTimedOut(f"the job exceeded its time limit of {seconds} seconds")
+
+    previous_handler = signal.signal(signal.SIGALRM, on_alarm)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def _failure_reason(error: Exception) -> str:
@@ -39,12 +64,13 @@ def _discard_partial_output(context: WorkerContext, job_id: str) -> None:
 
 def _run_tracking(context: WorkerContext, job_id: str, clock: Callable[[], float]) -> ProcessOutcome:
     try:
-        track_sequence(
-            context.layout.frames_dir(job_id),
-            context.layout.result_path(job_id),
-            context.detect_frame,
-            context.metadata,
-        )
+        with _within_time_limit(context.time_limit_seconds):
+            track_sequence(
+                context.layout.frames_dir(job_id),
+                context.layout.result_path(job_id),
+                context.detect_frame,
+                context.metadata,
+            )
     except Exception as error:
         _discard_partial_output(context, job_id)
         context.store.transition(job_id, JobStatus.FAILED, clock(), reason=_failure_reason(error))

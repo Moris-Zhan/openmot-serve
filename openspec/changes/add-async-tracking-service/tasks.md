@@ -28,7 +28,7 @@
 
 - [x] 5.1 先寫測試再實作 Job 處理函式（取得鎖 → 轉 running → 呼叫 `track_sequence` → 轉 succeeded；任何例外轉 failed 並記錄原因且不留下 Result；終態的 Job 直接略過）；驗證以假偵測器的測試涵蓋「成功」「影格損毀」「偵測丟出例外」「儲存失敗」「重複投遞只處理一次」「終態不被覆寫」「失敗後可繼續處理下一個 Job」
 - [x] 5.2 驗證服務路徑與命令列產生相同的 Result：對同一份合成影格與同一個假偵測器，處理函式輸出的 Result 與 `python -m tracking.run` 的輸出逐位元組相同
-- [ ] 5.3 實作 Celery 應用與任務設定（acks_late、reject_on_worker_lost、prefetch 1、solo pool、任務時間上限小於鎖逾時），並在啟動時先跑環境檢查再載入偵測器一次；驗證測試涵蓋「環境檢查失敗或權重驗證失敗時啟動以非 0 結束且不處理 Job」「連續兩個 Job 只載入一次偵測器」「超過時間上限的 Job 標為 failed」
+- [x] 5.3 實作 Celery 應用與任務設定（acks_late、reject_on_worker_lost、prefetch 1、solo pool、任務時間上限小於鎖逾時），並在啟動時先跑環境檢查再載入偵測器一次；驗證測試涵蓋「環境檢查失敗或權重驗證失敗時啟動以非 0 結束且不處理 Job」「連續兩個 Job 只載入一次偵測器」「超過時間上限的 Job 標為 failed」
 - [ ] 5.4 在有 GPU 與 Redis 的本機（不經容器）端到端驗證：啟動 worker 與 API，提交一個真實的 MOT17 影格 zip，輪詢到 succeeded，Result 與 `python -m tracking.run` 的結果逐位元組相同；中途終止 worker 後 Job 不會停在 running；把結果與耗時記錄在 docs/service.md
 
 ## 6. 容器與 compose（container-deployment）

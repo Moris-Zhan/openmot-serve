@@ -1,3 +1,5 @@
+import signal
+import time
 from pathlib import Path
 
 import cv2
@@ -59,9 +61,9 @@ def layout(tmp_path: Path) -> StorageLayout:
     return StorageLayout(tmp_path / "storage")
 
 
-def _context(store: InMemoryJobStore, layout: StorageLayout, detector, owner: str = OWNER) -> WorkerContext:  # type: ignore[no-untyped-def]
+def _context(store: InMemoryJobStore, layout: StorageLayout, detector, owner: str = OWNER, time_limit_seconds: int | None = None) -> WorkerContext:  # type: ignore[no-untyped-def]
     metadata = RunMetadata(TrackerParams(), WEIGHTS_ID, WEIGHTS_SHA256, "fp16")
-    return WorkerContext(store, layout, detector, metadata, owner, LOCK_SECONDS)
+    return WorkerContext(store, layout, detector, metadata, owner, LOCK_SECONDS, time_limit_seconds)
 
 
 def _queue_job(store: InMemoryJobStore, layout: StorageLayout, job_id: str = "job-1") -> None:
@@ -239,3 +241,45 @@ def test_a_failed_retry_does_not_leave_the_result_of_a_dead_attempt(store, layou
     outcome = process_job(_context(store, layout, FakeDetector(fail_at=1)), "job-1", clock)
     assert outcome is ProcessOutcome.FAILED
     _assert_no_result(layout)
+
+
+def test_a_job_over_its_time_limit_is_failed_with_a_reason(store, layout, clock) -> None:  # type: ignore[no-untyped-def]
+    _queue_job(store, layout)
+
+    def slow_detector(image: np.ndarray) -> np.ndarray:
+        time.sleep(0.6)
+        return np.zeros((0, 5))
+
+    outcome = process_job(_context(store, layout, slow_detector, time_limit_seconds=1), "job-1", clock)
+    assert outcome is ProcessOutcome.FAILED
+    assert _status(store) is JobStatus.FAILED
+    assert "time limit of 1 seconds" in _reason(store)
+    _assert_no_result(layout)
+    assert store.acquire_lock("job-1", "someone-else", LOCK_SECONDS) is True
+
+
+def test_a_job_within_its_time_limit_is_unaffected(store, layout, clock) -> None:  # type: ignore[no-untyped-def]
+    _queue_job(store, layout)
+    outcome = process_job(_context(store, layout, FakeDetector(), time_limit_seconds=30), "job-1", clock)
+    assert outcome is ProcessOutcome.SUCCEEDED
+
+
+@pytest.mark.parametrize("fail_at", [None, 2])
+def test_the_alarm_is_always_cleared_and_the_old_handler_restored(store, layout, clock, fail_at) -> None:  # type: ignore[no-untyped-def]
+    _queue_job(store, layout)
+    before = signal.getsignal(signal.SIGALRM)
+    process_job(_context(store, layout, FakeDetector(fail_at=fail_at), time_limit_seconds=30), "job-1", clock)
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+    assert signal.getsignal(signal.SIGALRM) == before
+
+
+def test_without_a_time_limit_no_alarm_is_armed(store, layout, clock) -> None:  # type: ignore[no-untyped-def]
+    _queue_job(store, layout)
+    armed: list[tuple[float, float]] = []
+
+    def watching_detector(image: np.ndarray) -> np.ndarray:
+        armed.append(signal.getitimer(signal.ITIMER_REAL))
+        return np.zeros((0, 5))
+
+    process_job(_context(store, layout, watching_detector), "job-1", clock)
+    assert armed and all(timer == (0.0, 0.0) for timer in armed)
