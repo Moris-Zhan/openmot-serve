@@ -34,7 +34,7 @@
 ## 6. 容器與 compose（container-deployment）
 
 - [x] 6.1 撰寫 api 與 worker 的 Dockerfile 與 `.dockerignore`（`python:3.11-slim`、`uv pip install`、worker 含 cu128 的 torch、不含權重與資料）；驗證兩個映像都能建置，並以 `docker run ... ls` 或映像檢查確認其中沒有 `*.pth`、`data/MOT17` 與憑證檔案
-- [ ] 6.2 撰寫 `deploy/docker/docker-compose.yml`（redis 含 AOF 與 volume、api、worker 含 GPU 預約、共用具名 volume、權重唯讀 bind mount、Redis 就緒後才啟動、每個服務的健康檢查）；驗證 `docker compose config` 通過，且 `docker compose up` 後三個服務皆為 healthy、`GET /health` 回 200
+- [x] 6.2 撰寫 `deploy/docker/docker-compose.yml`（redis 含 AOF 與 volume、api、worker 含 GPU 預約、共用具名 volume、權重唯讀 bind mount、Redis 就緒後才啟動、每個服務的健康檢查）；驗證 `docker compose config` 通過，且 `docker compose up` 後三個服務皆為 healthy、`GET /health` 回 200
 - [ ] 6.3 驗證 worker 在看不到 GPU 時啟動失敗：以不要求 GPU 的設定啟動 worker，確認它以非 0 結束並輸出 CUDA 不可用，不接受 Job
 - [ ] 6.4 以 `integration` 標記寫端到端測試並在本機執行：透過 compose 提交 zip、輪詢到 succeeded、取回 Result；接著重建 api 與 worker 容器，確認先前 Job 的 Job Status 與 Result 仍可取回，並確認 worker 晚於 api 啟動時已排入的 Job 仍被處理；沒有 Docker 或 GPU 時此測試以 skip 說明原因
 

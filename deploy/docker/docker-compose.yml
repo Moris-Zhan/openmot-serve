@@ -1,0 +1,80 @@
+name: openmot
+
+x-service-env: &service-env
+  OPENMOT_STORAGE_DIR: /data/storage
+  OPENMOT_REDIS_URL: redis://redis:6379/0
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/api.Dockerfile
+    image: openmot-api:dev
+    environment:
+      <<: *service-env
+    ports:
+      - "${OPENMOT_API_PORT:-8000}:8000"
+    volumes:
+      - storage:/data/storage
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/worker.Dockerfile
+    image: openmot-worker:dev
+    environment:
+      <<: *service-env
+      OPENMOT_WEIGHTS: /models/yolox_x.pth
+    volumes:
+      - storage:/data/storage
+      - type: bind
+        source: ${OPENMOT_WEIGHTS_FILE:-../../models/yolox_x.pth}
+        target: /models/yolox_x.pth
+        read_only: true
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python", "-m", "worker.healthcheck"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 90s
+    restart: unless-stopped
+
+volumes:
+  storage:
+  redis-data:
