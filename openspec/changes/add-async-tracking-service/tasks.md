@@ -19,7 +19,7 @@
 
 ## 4. HTTP API（tracking-job-api）
 
-- [ ] 4.1 先寫測試再實作 `POST /jobs`（以注入的假儲存與假佇列）；驗證測試涵蓋「合法 zip 回 202 與 job ID、Job Status 為 queued」「連續提交得到不同 ID」「不合法上傳回 4xx 且沒有建立 Job」「排入佇列失敗回 5xx 且移除影格」
+- [x] 4.1 先寫測試再實作 `POST /jobs`（以注入的假儲存與假佇列）；驗證測試涵蓋「合法 zip 回 202 與 job ID、Job Status 為 queued」「連續提交得到不同 ID」「不合法上傳回 4xx 且沒有建立 Job」「排入佇列失敗回 5xx 且移除影格」
 - [ ] 4.2 先寫測試再實作 `GET /jobs/{job_id}` 與 `GET /jobs/{job_id}/result`；驗證測試涵蓋「各個 Job Status 的回應」「failed 帶失敗原因」「未完成與失敗時 Result 回 4xx 且可區分」「未知 ID 回 404」「Result 每行 10 個欄位」
 - [ ] 4.3 先寫測試再實作 `GET /health`；驗證測試涵蓋「Redis 可連線且儲存可寫入回 200」「Redis 無法連線回 503 並指出佇列後端」「儲存不可寫回 503 並指出儲存」
 - [ ] 4.4 在 `docs/service.md` 以繁體中文說明 API（請求範例用 curl、回應範例、zip 打包方式、錯誤碼與上限）；驗證文件中的 curl 範例能對本機以假後端啟動的 API 照字面執行
