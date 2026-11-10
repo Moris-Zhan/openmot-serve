@@ -179,3 +179,36 @@ docker stop openmot-test-redis
 ```
 
 預設連線位址為 `redis://localhost:16379/0`，可用 `OPENMOT_TEST_REDIS_URL` 覆寫。沒有 Redis 時這些測試會自動跳過。
+
+## 本機端對端驗證（不經容器）
+
+驗證環境：RTX 5090、`redis:7-alpine`（Docker）、`python -m worker.run`、`python -m app.run`，權重為 `models/yolox_x.pth`，精度 fp16。
+
+```shell
+export OPENMOT_STORAGE_DIR=/path/to/storage OPENMOT_REDIS_URL=redis://localhost:16379/0
+export OPENMOT_WEIGHTS=$PWD/models/yolox_x.pth
+python -m worker.run   # 先通過環境檢查並載入偵測器，才開始消費佇列
+python -m app.run      # 監聽 0.0.0.0:8000
+```
+
+### 正常流程
+
+以 MOT17-09-FRCNN（525 張影格，zip 108 MB）提交：
+
+| 項目 | 結果 |
+| --- | --- |
+| `POST /jobs`（上傳、解壓、解碼驗證、排入佇列） | 約 3.4 秒 |
+| worker 處理（偵測加追蹤） | 約 11.7 秒 |
+| 提交到 `succeeded` 的總時間 | 約 15.6 秒 |
+| `python -m tracking.run` 同一序列 | 約 15.8 秒（含載入模型） |
+| Result 與 CLI 輸出 | `cmp` 逐位元組相同（6125 列） |
+
+### 中途終止 worker
+
+以較短的逾時（`OPENMOT_LOCK_TIMEOUT_SECONDS=30`、`OPENMOT_TASK_TIME_LIMIT_SECONDS=25`）重新啟動 worker，Job 開始 `running` 後用 `kill -9` 終止 worker：
+
+- worker 不在時，Job 會維持 `running`，因為沒有任何行程可以更新它。
+- 重新啟動 worker 後，訊息被重新投遞，舊鎖過期後由新 worker 接手，Job 最後變成 `succeeded`，Result 與 CLI 輸出逐位元組相同。從終止到完成約 126 秒，其中包含 worker 重啟與載入模型（約 20 秒）和等待重新投遞。
+- 重新投遞要等 `visibility_timeout`（等於鎖逾時），預設 1800 秒；上面的 126 秒是因為測試時縮短了逾時。
+
+所以 Job 不會永久停在 `running`，前提是 worker 會被重新啟動（compose 的 `restart` 政策負責這件事）。
