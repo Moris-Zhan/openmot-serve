@@ -50,7 +50,7 @@ def _frames(count: int = 4) -> bytes:
 
 
 def _app_client(backend: Backend, limits: UploadLimits = LIMITS) -> TestClient:
-    return TestClient(create_app(backend.store, backend.layout, limits, backend.enqueue))
+    return TestClient(create_app(backend.store, backend.layout, limits, backend.enqueue, lambda: None))
 
 
 @pytest.fixture
@@ -95,7 +95,7 @@ def test_the_job_and_its_frames_exist_before_the_job_is_queued(backend: Backend)
     def enqueue(job_id: str) -> None:
         seen.append((backend.store.get(job_id), backend.layout.frames_dir(job_id).is_dir()))
 
-    client = TestClient(create_app(backend.store, backend.layout, LIMITS, enqueue))
+    client = TestClient(create_app(backend.store, backend.layout, LIMITS, enqueue, lambda: None))
     assert _submit(client, _frames()).status_code == 202
     record, frames_present = seen[0]
     assert record is not None and record.status is JobStatus.QUEUED

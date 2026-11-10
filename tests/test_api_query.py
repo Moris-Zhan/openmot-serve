@@ -32,7 +32,7 @@ def layout(tmp_path: Path) -> StorageLayout:
 
 @pytest.fixture
 def client(store: InMemoryJobStore, layout: StorageLayout) -> TestClient:
-    return TestClient(create_app(store, layout, LIMITS, lambda job_id: None))
+    return TestClient(create_app(store, layout, LIMITS, lambda job_id: None, lambda: None))
 
 
 def _job_in_state(store: InMemoryJobStore, job_id: str, target: JobStatus, reason: str | None = None) -> None:

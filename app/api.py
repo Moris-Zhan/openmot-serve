@@ -1,8 +1,9 @@
+import tempfile
 import time
 from collections.abc import Callable
 
 from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from app.upload import UploadLimits, UploadRejected, UploadTooLarge, unpack_upload
 from jobs.layout import StorageError, StorageLayout, new_job_id, publish_frames, remove_job, staged_frames
@@ -10,6 +11,7 @@ from jobs.record import JobRecord, JobStatus, new_job
 from jobs.store import JobStore
 
 Enqueue = Callable[[str], None]
+PingQueue = Callable[[], None]
 
 
 def _submit(
@@ -69,11 +71,27 @@ def _result_text(record: JobRecord, layout: StorageLayout) -> str:
         raise HTTPException(status_code=500, detail=f"result of job {record.job_id} is missing") from error
 
 
+def _health_problems(layout: StorageLayout, ping_queue: PingQueue) -> list[str]:
+    problems: list[str] = []
+    try:
+        ping_queue()
+    except Exception as error:
+        problems.append(f"queue backend is unavailable: {error}")
+    try:
+        layout.root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryFile(dir=layout.root):
+            pass
+    except OSError as error:
+        problems.append(f"storage is not writable: {error}")
+    return problems
+
+
 def create_app(
     store: JobStore,
     layout: StorageLayout,
     limits: UploadLimits,
     enqueue: Enqueue,
+    ping_queue: PingQueue,
     clock: Callable[[], float] = time.time,
 ) -> FastAPI:
     app = FastAPI(title="openmot-serve")
@@ -89,5 +107,12 @@ def create_app(
     @app.get("/jobs/{job_id}/result", response_class=PlainTextResponse)
     def job_result(job_id: str) -> str:
         return _result_text(_known_job(store, job_id), layout)
+
+    @app.get("/health")
+    def health() -> JSONResponse:
+        problems = _health_problems(layout, ping_queue)
+        if problems:
+            return JSONResponse(status_code=503, content={"status": "unavailable", "problems": problems})
+        return JSONResponse(content={"status": "ok"})
 
     return app
