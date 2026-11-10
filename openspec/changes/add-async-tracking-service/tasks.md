@@ -9,7 +9,7 @@
 ## 2. Job 紀錄與狀態機（tracking-job-api、tracking-job-execution）
 
 - [x] 2.1 先寫測試再實作 Job 紀錄與合法轉移規則（`queued → running → succeeded|failed`、`queued → failed`，終態不可覆寫、狀態不倒退）；驗證參數化測試涵蓋所有合法與非法的轉移
-- [ ] 2.2 先寫測試再實作 Job 儲存的介面與 Redis 版本（原子轉移、失敗原因、未知 ID 回報不存在、每 Job 的鎖含逾時）；驗證預設測試以記憶體內的假實作通過，`-m integration` 對真實 Redis 通過，涵蓋「兩個行程同時搶同一個 Job 只有一個成功」
+- [x] 2.2 先寫測試再實作 Job 儲存的介面與 Redis 版本（原子轉移、失敗原因、未知 ID 回報不存在、每 Job 的鎖含逾時）；驗證預設測試以記憶體內的假實作通過，`-m integration` 對真實 Redis 通過，涵蓋「兩個行程同時搶同一個 Job 只有一個成功」
 - [ ] 2.3 實作共用儲存的路徑規則與原子寫入（`jobs/<job_id>/frames/`、`result.txt`，影格先在暫存資料夾驗證再 rename）；驗證測試涵蓋路徑不會逃出儲存根目錄、中途失敗不留下半成品
 
 ## 3. 上傳驗證（tracking-job-api）
