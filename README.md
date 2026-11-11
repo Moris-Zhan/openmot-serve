@@ -2,7 +2,7 @@
 
 Multi-object tracking (MOT17/MOT20) as a production service: FastAPI + Docker + Kubernetes + CI/CD, evaluated with HOTA.
 
-> **Status: v0.2 done — async service and containers.** The tracking pipeline and benchmark (v0.1) are unchanged: `python -m eval.run` tunes on the MOT17 tuning half and reports HOTA / MOTA / IDF1 on the validation half (see [`docs/evaluation.md`](docs/evaluation.md)). On top of it, an HTTP API, a Celery GPU worker and a Docker Compose stack are working; see [`docs/service.md`](docs/service.md) for the API, the container deployment and the end-to-end results. The Kubernetes, CI and observability parts below are still _planned_ and are the design this repository is being built against. Design decisions live in [`docs/adr/`](docs/adr/); domain terms are defined in [`CONTEXT.md`](CONTEXT.md).
+> **Status: v0.2 done; v0.3 in progress — Kubernetes manifests are written but not yet verified on a live cluster.** The tracking pipeline and benchmark (v0.1) are unchanged: `python -m eval.run` tunes on the MOT17 tuning half and reports HOTA / MOTA / IDF1 on the validation half (see [`docs/evaluation.md`](docs/evaluation.md)). On top of it, an HTTP API, a Celery GPU worker and a Docker Compose stack are working; see [`docs/service.md`](docs/service.md) for the API, the container deployment and the end-to-end results. The Kubernetes manifests (kustomize base and a k3s single-node overlay) are covered by render and schema tests only; no k3s cluster was available, so deployment, GPU scheduling and pod recovery are not yet verified. [`docs/kubernetes.md`](docs/kubernetes.md) has the prerequisites, the deploy steps and a runbook for verifying them on an external cluster. CI and observability are still _planned_ and are the design this repository is being built against. Design decisions live in [`docs/adr/`](docs/adr/); domain terms are defined in [`CONTEXT.md`](CONTEXT.md).
 
 ## What this project demonstrates
 
@@ -43,7 +43,7 @@ sequenceDiagram
     A-->>C: tracks
 ```
 
-## Deployment architecture _(planned, v0.3)_
+## Deployment architecture _(v0.3 manifests written, not yet verified; monitoring planned, v0.4)_
 
 ```mermaid
 flowchart LR
@@ -51,13 +51,13 @@ flowchart LR
         subgraph app [namespace: openmot]
             API[api<br/>Deployment] --> REDIS[(redis)]
             REDIS --> WORKER[worker<br/>Deployment<br/>GPU node]
-            API --- PV[(PersistentVolume)]
+            API --- PV[(PersistentVolumeClaim)]
             WORKER --- PV
         end
-        subgraph mon [namespace: monitoring]
+        subgraph mon [namespace: monitoring - planned, v0.4]
             PROM[Prometheus] --> GRAF[Grafana]
         end
-        GPUOP[NVIDIA GPU Operator] -.schedules GPU.-> WORKER
+        GPUPLUGIN[NVIDIA device plugin<br/>assumed installed] -.advertises GPU.-> WORKER
         PROM -.scrapes /metrics.-> API
         PROM -.scrapes.-> WORKER
     end
@@ -70,8 +70,8 @@ flowchart LR
 | Queue | Celery + Redis | One job per sequence |
 | Detector | YOLOX, pretrained COCO weights | Apache-2.0, see ADR-0001 |
 | Tracker | ByteTrack | MIT |
-| Storage | Kubernetes PersistentVolume | S3-compatible storage later |
-| Orchestration | k3s + NVIDIA GPU Operator | Target GPU: RTX 5090 (CUDA 12.8+) |
+| Storage | Kubernetes PersistentVolumeClaim (k3s `local-path`, single node) | S3-compatible storage later |
+| Orchestration | k3s single node + NVIDIA device plugin | GPU Operator is not managed here; target GPU: RTX 5090 (CUDA 12.8+) |
 | Monitoring | Prometheus + Grafana | Latency, throughput, job failures |
 | CI | GitHub Actions | Lint, test, build image |
 
@@ -96,7 +96,7 @@ openmot-serve/
 ├── eval/         # TrackEval benchmark runs on the MOT17 validation half
 ├── deploy/
 │   ├── docker/   # Dockerfiles, docker-compose
-│   └── k8s/      # k3s manifests (planned, v0.3)
+│   └── k8s/      # kustomize base + k3s single-node overlay
 ├── monitoring/   # Prometheus rules, Grafana dashboards (planned, v0.4)
 ├── data/         # download_mot.sh (datasets are never committed)
 ├── tests/
@@ -149,9 +149,10 @@ COCO 預訓練權重，未針對 MOT17 微調；數字不可與 ByteTrack 論文
 - [x] Dockerfiles and docker-compose for API, worker and Redis
 
 ### v0.3 — Kubernetes
-- [ ] k3s manifests: api, worker, redis, persistent volume
-- [ ] NVIDIA GPU Operator and GPU scheduling for the worker
-- [ ] Health checks and resource limits
+- [x] k3s manifests: api, worker, redis, persistent volume (kustomize base + k3s overlay; render and schema tests only)
+- [x] Health checks and resource limits (probes declared; resource values are uncalibrated)
+- [ ] GPU scheduling for the worker (`nvidia.com/gpu` request is declared; scheduling is unverified, and the NVIDIA GPU Operator is out of scope — a device plugin is assumed)
+- [ ] Verify the deployment, GPU scheduling and pod recovery on a live k3s cluster (runbook in [`docs/kubernetes.md`](docs/kubernetes.md))
 
 ### v0.4 — CI/CD and observability
 - [ ] GitHub Actions: lint, test, build image on every push
