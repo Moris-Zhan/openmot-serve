@@ -29,7 +29,7 @@
 - [ ] 4.3 （需要 GPU 與 k3s）Job 處於 `running` 時刪除 worker Pod，驗證替代 Pod Ready 後 Job 進入 `succeeded`、Result 與 CLI 相同，並記錄所花時間；不具備條件時在文件標明未驗證
 - [ ] 4.4 （需要 k3s）Job `succeeded` 後刪除 api 與 worker 的 Pod，再刪除 Redis 的 Pod，驗證 Job Status 與 Result 仍可取得；無法完成 worker 部分時，至少以 api 與 Redis 驗證 Job Status 的保留
 - [ ] 4.5 （待外部叢集）有叢集時用 `kubectl top` 與實際處理的觀測校正 D10 的資源值，並在文件記錄量到的數字；沒有叢集時保留暫定值並在文件標明
-- [ ] 4.6 以 `integration` 標記寫入叢集測試（提交、輪詢、取回、刪除 Pod 後復原），沒有 `KUBECONFIG`、叢集不可連或沒有 GPU 時 skip 並說明原因；在可用的叢集上執行並驗證通過，無叢集時驗證 skip 的訊息
+- [x] 4.6 以 `integration` 標記寫入叢集測試（提交、輪詢、取回、刪除 Pod 後復原），沒有 `KUBECONFIG`、叢集不可連或沒有 GPU 時 skip 並說明原因；在可用的叢集上執行並驗證通過，無叢集時驗證 skip 的訊息
 
 ## 5. 文件與收尾（kubernetes-deployment）
 
