@@ -4,6 +4,37 @@
 
 > **未經實機驗證。** 目前沒有可用的 k3s 環境（沒有宿主機或獨立 VM，Docker daemon 上的特權 k3s 受節點 inotify 限制無法啟動），因此本文的指令尚未在真實叢集上執行過。清單本身有渲染測試與 schema 檢查，但映像載入、GPU 排程與 Pod 重建後的復原都需要在外部叢集依本文逐步驗證（對應任務 4.1，待外部叢集執行）。
 
+## 驗證環境
+
+### 驗證工具
+
+開發環境沒有 root 權限的套件管理，三個工具以固定版本安裝到使用者目錄 `~/.local/bin`（linux/amd64），下載後都比對過官方公布的 SHA-256：
+
+| 工具 | 版本 | 來源 | 用途 |
+| --- | --- | --- | --- |
+| kubectl | v1.31.4 | `https://dl.k8s.io/release/v1.31.4/bin/linux/amd64/kubectl` | 對叢集下指令；`kubectl apply -k` 內建的 kustomize 是 v5.4.2 |
+| kustomize | v5.5.0 | `https://github.com/kubernetes-sigs/kustomize/releases/tag/kustomize%2Fv5.5.0` | 渲染 `deploy/k8s/` 的清單，測試使用這一個 |
+| kubeconform | v0.6.7 | `https://github.com/yannh/kubeconform/releases/tag/v0.6.7` | 以 Kubernetes 1.31.0 的 schema 檢查渲染結果 |
+
+確認三者可以執行，輸出應包含上表的版本：
+
+```shell
+kubectl version --client
+kustomize version
+kubeconform -v
+```
+
+### 沒有叢集的原因與選定的層級
+
+驗證分三層：(1) 無叢集，只做渲染與 schema 檢查；(2) 有 k3s 但沒有 GPU；(3) 有 k3s 與 GPU 的完整端到端。**本次只達到第 1 層（無叢集）**，原因如下：
+
+- 沒有可用的宿主機或獨立 VM。
+- 開發環境本身是 Kubernetes 叢集（namespace `ai-model`）中的一個 Pod，Docker daemon 是同一個 Pod 的 sidecar，不是獨立的宿主機。
+- 在這個 Docker daemon 上以特權容器啟動 k3s（`rancher/k3s:v1.31.4-k3s1`）失敗：containerd 的 CRI 啟動時出現 `failed to create fsnotify watcher: too many open files`，節點的 `fs.inotify.max_user_instances` 為 128，而且這個限制無法在 Pod 內調整。
+- `ai-model` 是共用的 GPU 開發叢集，沒有提供 kubeconfig，也不列為部署目標。
+
+第 1 層驗證的是清單的結構與設定值（`pytest` 預設會跑）；第 2、3 層，包含 GPU 排程、探針行為、Pod 重建後的復原，**未經實機驗證**，需要在外部 k3s 叢集依下方的步驟執行。
+
 ## 部署
 
 以下步驟在 k3s 節點上執行，目錄是這個 repository 的根目錄。

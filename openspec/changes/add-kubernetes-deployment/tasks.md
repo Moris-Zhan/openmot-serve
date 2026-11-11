@@ -5,7 +5,7 @@
 - [x] 1.1 在開發環境（不在映像內）安裝 kubectl、kustomize、kubeconform 的固定版本到使用者目錄，驗證三者的 `version` 指令都能執行，並記錄版本與下載來源
 - [x] 1.2 評估能否取得可安裝 k3s 的環境（結論：不可取得）：使用者沒有宿主機或獨立 VM；Docker daemon 上的特權 k3s 因節點 inotify 限制（`too many open files`）無法啟動，且既有叢集 `ai-model` 不列為部署目標；失敗原因與所用指令已記錄，驗證層級降為「無叢集」
 - [ ] 1.3 （待外部叢集，目前無 k3s 環境，不執行）評估 GPU：在 k3s 節點安裝 NVIDIA Container Toolkit 設定與裝置外掛，驗證 `kubectl describe node` 顯示 `nvidia.com/gpu: 1`，且一個測試 Pod 內 `nvidia-smi` 看得到 RTX 5090；失敗時記錄原因並改走「無 GPU」路徑，不再嘗試其他安裝方式
-- [ ] 1.4 在 `docs/kubernetes.md`（繁體中文）建立「驗證環境」一節，寫入 1.1、1.2 的結果與選定的驗證層級（無叢集），並明寫「未經實機驗證」；驗證文件中可執行的指令照字面執行得到相同結果
+- [x] 1.4 在 `docs/kubernetes.md`（繁體中文）建立「驗證環境」一節，寫入 1.1、1.2 的結果與選定的驗證層級（無叢集），並明寫「未經實機驗證」；驗證文件中可執行的指令照字面執行得到相同結果
 
 ## 2. 清單 base（kubernetes-deployment）
 
