@@ -35,6 +35,7 @@
 
 ### D3：先做環境可行性評估，有明確的通過條件與降級路徑
 可行性評估是第一個任務，不是前提假設。順序：(a) 使用者能提供宿主機或獨立 VM 與 kubeconfig；(b) 在 Docker daemon 上以特權容器執行 k3s（`rancher/k3s`），GPU 需要在映像中加入 NVIDIA Container Toolkit 並以 `--gpus all` 啟動；(c) 以上皆不可行時，停在第 1 層，完整保留清單，並在文件寫出在外部 k3s 叢集的部署與驗證指令。不在現有的開發容器內安裝 k3s。評估有時間上限，結果（含失敗原因）記錄在文件，tasks 依結果決定實機驗證的範圍，不把降級當成靜默跳過。
+**評估結論（已定）**：沒有宿主機或獨立 VM；Docker daemon 與開發環境同屬一個 Pod，特權 k3s 因節點 inotify 限制無法啟動；既有叢集 `ai-model` 是共用的 GPU 開發叢集，不列為部署目標。因此本變更停在第 1 層：清單、渲染測試與 schema 檢查完成，實機驗證（第 2、3 層與 spec 中需要叢集的情境，如冷部署、GPU 分配、Pod 重建後的復原）**尚未驗證**，以 `docs/kubernetes.md` 的外部執行手冊交付。
 *替代方案*：kind——k3s 才是專案的目標環境，且 kind 的 GPU 支援更弱。
 
 ### D4：儲存用單一 local-path PVC，不加 podAffinity
@@ -57,10 +58,10 @@ worker 容器宣告 `resources.limits["nvidia.com/gpu"]: 1`，並指定 `runtime
 *替代方案*：把權重放進 PVC 並用 Job 填入——多一個一次性資源，單節點下沒有額外好處；registry——需要另外維護一個服務。
 
 ### D9：安全預設
-所有 Pod 設定 `runAsNonRoot`、`runAsUser: 1000`、`allowPrivilegeEscalation: false`、捨棄所有 capabilities、`seccompProfile: RuntimeDefault`。是否能再開 `readOnlyRootFilesystem`（需要為 `/tmp` 等補上 emptyDir）在實機驗證時決定，結果記錄在文件；測試只守住不是 root 與非特權。
+所有 Pod 設定 `runAsNonRoot`、`runAsUser: 1000`、`allowPrivilegeEscalation: false`、捨棄所有 capabilities、`seccompProfile: RuntimeDefault`。`readOnlyRootFilesystem` 預設不開：沒有實機就無法確認 torch 與 Celery 是否需要寫入其他目錄（需補 `/tmp` 等 emptyDir），文件列為實機驗證後再收緊的建議；測試只守住不是 root 與非特權。
 
 ### D10：資源值先暫定，用實測校正
-初始值：api 請求 100m CPU 與 256Mi 記憶體、記憶體上限 1Gi；Redis 請求 100m 與 128Mi、上限 512Mi；worker 請求 2 CPU 與 6Gi、記憶體上限 12Gi。這些是暫定值，實機驗證時以 `kubectl top` 與實際處理 MOT17 序列的觀測校正，並把量到的數字寫進文件；沒有叢集可量測時保持暫定並在文件標明。
+初始值：api 請求 100m CPU 與 256Mi 記憶體、記憶體上限 1Gi；Redis 請求 100m 與 128Mi、上限 512Mi；worker 請求 2 CPU 與 6Gi、記憶體上限 12Gi。這些是暫定值，實機驗證時以 `kubectl top` 與實際處理 MOT17 序列的觀測校正，並把量到的數字寫進文件；沒有叢集可量測時保持暫定並在文件標明（目前即是此情況：值為未校準的暫定值）。
 
 ## Risks / Trade-offs
 

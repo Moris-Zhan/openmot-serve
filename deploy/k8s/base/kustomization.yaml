@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+configMapGenerator:
+  - name: openmot-config
+    literals:
+      - OPENMOT_STORAGE_DIR=/data/storage
+      - OPENMOT_REDIS_URL=redis://redis:6379/0
+      - OPENMOT_WEIGHTS=/models/yolox_x.pth
+      - OPENMOT_PRECISION=fp16
+      - OPENMOT_MAX_UPLOAD_BYTES=1073741824
+      - OPENMOT_MAX_UNPACKED_BYTES=4294967296
+      - OPENMOT_LOCK_TIMEOUT_SECONDS=1800
+      - OPENMOT_TASK_TIME_LIMIT_SECONDS=1500
