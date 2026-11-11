@@ -11,7 +11,7 @@
 
 - [x] 2.1 先寫失敗的測試再建立骨架：`pyyaml` 加入 `dev` extras、`deploy/k8s/base/kustomization.yaml` 與以 `configMapGenerator` 產生的設定（base 不寫死 namespace，Namespace 資源由 3.1 的 overlay 提供）；測試渲染 base 並檢查設定的變數名稱與預設值與 compose 一致；沒有 kustomize 時 skip 並說明原因；驗證測試通過且突變（改一個變數名稱）會失敗
 - [x] 2.2 加入共用儲存的 PVC 與 Redis 的 StatefulSet（AOF、`volumeClaimTemplates`、`redis-cli ping` 探針）與 Service；先寫測試檢查 AOF 指令、PVC 存取模式與探針；驗證測試通過
-- [ ] 2.3 加入 api 的 Deployment 與 ClusterIP Service：readiness 用 `/health`、liveness 只做 TCP、startupProbe、資源 requests 與 limits、非 root 與 `fsGroup`、掛載共用 PVC；先寫測試檢查這些屬性；驗證測試通過且突變（liveness 改成 `/health`）會失敗
+- [x] 2.3 加入 api 的 Deployment 與 ClusterIP Service：readiness 用 `/health`、liveness 只做 TCP、startupProbe、資源 requests 與 limits、非 root 與 `fsGroup`、掛載共用 PVC；先寫測試檢查這些屬性；驗證測試通過且突變（liveness 改成 `/health`）會失敗
 - [ ] 2.4 加入 worker 的 Deployment：`nvidia.com/gpu: 1` 與 `runtimeClassName: nvidia`、`replicas: 1` 與 `Recreate`、startup 與 readiness 的 exec 探針且沒有 livenessProbe、優雅終止時間大於任務時間上限、唯讀的權重 hostPath、資源與安全設定；先寫測試檢查；驗證測試通過且突變（移除 GPU 請求、加上 liveness、策略改 RollingUpdate）都會失敗
 - [ ] 2.5 加入跨資源的測試：渲染結果沒有 root 或 privileged 容器、權重掛載唯讀、清單中沒有憑證類內容、所有工作負載都有探針與資源宣告；以 kubeconform 對渲染結果做 schema 檢查（沒有時 skip）；驗證測試通過
 

@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - storage.yaml
   - redis.yaml
+  - api.yaml
 
 configMapGenerator:
   - name: openmot-config
