@@ -5,6 +5,7 @@ resources:
   - storage.yaml
   - redis.yaml
   - api.yaml
+  - worker.yaml
 
 configMapGenerator:
   - name: openmot-config

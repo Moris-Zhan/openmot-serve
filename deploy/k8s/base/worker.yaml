@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: worker
+    spec:
+      runtimeClassName: nvidia
+      terminationGracePeriodSeconds: 1560
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: openmot-worker:dev
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: openmot-config
+          startupProbe:
+            exec:
+              command: ["python", "-m", "worker.healthcheck"]
+            periodSeconds: 10
+            timeoutSeconds: 15
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command: ["python", "-m", "worker.healthcheck"]
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "2"
+              memory: 6Gi
+            limits:
+              memory: 12Gi
+              nvidia.com/gpu: 1
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: storage
+              mountPath: /data/storage
+            - name: weights
+              mountPath: /models/yolox_x.pth
+              readOnly: true
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: openmot-storage
+        - name: weights
+          hostPath:
+            path: /opt/openmot/models/yolox_x.pth
+            type: File
