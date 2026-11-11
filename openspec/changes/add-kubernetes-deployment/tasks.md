@@ -4,7 +4,6 @@
 
 - [x] 1.1 在開發環境（不在映像內）安裝 kubectl、kustomize、kubeconform 的固定版本到使用者目錄，驗證三者的 `version` 指令都能執行，並記錄版本與下載來源
 - [x] 1.2 評估能否取得可安裝 k3s 的環境（結論：不可取得）：使用者沒有宿主機或獨立 VM；Docker daemon 上的特權 k3s 因節點 inotify 限制（`too many open files`）無法啟動，且既有叢集 `ai-model` 不列為部署目標；失敗原因與所用指令已記錄，驗證層級降為「無叢集」
-- [ ] 1.3 （待外部叢集，目前無 k3s 環境，不執行）評估 GPU：在 k3s 節點安裝 NVIDIA Container Toolkit 設定與裝置外掛，驗證 `kubectl describe node` 顯示 `nvidia.com/gpu: 1`，且一個測試 Pod 內 `nvidia-smi` 看得到 RTX 5090；失敗時記錄原因並改走「無 GPU」路徑，不再嘗試其他安裝方式
 - [x] 1.4 在 `docs/kubernetes.md`（繁體中文）建立「驗證環境」一節，寫入 1.1、1.2 的結果與選定的驗證層級（無叢集），並明寫「未經實機驗證」；驗證文件中可執行的指令照字面執行得到相同結果
 
 ## 2. 清單 base（kubernetes-deployment）
@@ -22,13 +21,8 @@
 
 ## 4. 實機驗證（kubernetes-deployment）
 
-以下 4.1 到 4.5 需要外部 k3s 叢集，目前沒有環境，**待外部叢集執行**：在 `docs/kubernetes.md` 寫成完整的執行手冊（指令與預期輸出），不勾選；4.6 的測試可在無叢集下完成並驗證 skip。
+以下需要外部 k3s 叢集的項目（原 1.3 與 4.1 到 4.5）沒有環境可執行，已移到後續變更 `verify-kubernetes-on-cluster`；這裡只保留 4.6，它的測試在無叢集下完成並驗證 skip。
 
-- [ ] 4.1 （待外部叢集）依 1.4 選定的層級執行：有 k3s 時 `kubectl apply -k` overlay，驗證 api 與 Redis 變 Ready、經 Service 呼叫 `/health` 回 `200`；有 GPU 時另驗證 worker 取得 GPU 並 Ready；沒有 GPU 時改驗證 worker 維持 Pending、事件為 `Insufficient nvidia.com/gpu`、api 與 Redis 不受影響；沒有 k3s 時，改在文件寫出完整的外部叢集部署與驗證指令並標示未實測
-- [ ] 4.2 （需要 GPU 與 k3s）提交 MOT17-09 的影格 zip、輪詢到 `succeeded`，驗證 Result 與 `python -m tracking.run` 的輸出逐位元組相同，並記錄各階段耗時；不具備條件時在文件標明未驗證
-- [ ] 4.3 （需要 GPU 與 k3s）Job 處於 `running` 時刪除 worker Pod，驗證替代 Pod Ready 後 Job 進入 `succeeded`、Result 與 CLI 相同，並記錄所花時間；不具備條件時在文件標明未驗證
-- [ ] 4.4 （需要 k3s）Job `succeeded` 後刪除 api 與 worker 的 Pod，再刪除 Redis 的 Pod，驗證 Job Status 與 Result 仍可取得；無法完成 worker 部分時，至少以 api 與 Redis 驗證 Job Status 的保留
-- [ ] 4.5 （待外部叢集）有叢集時用 `kubectl top` 與實際處理的觀測校正 D10 的資源值，並在文件記錄量到的數字；沒有叢集時保留暫定值並在文件標明
 - [x] 4.6 以 `integration` 標記寫入叢集測試（提交、輪詢、取回、刪除 Pod 後復原），沒有 `KUBECONFIG`、叢集不可連或沒有 GPU 時 skip 並說明原因；在可用的叢集上執行並驗證通過，無叢集時驗證 skip 的訊息
 
 ## 5. 文件與收尾（kubernetes-deployment）

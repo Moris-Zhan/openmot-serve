@@ -2,7 +2,7 @@
 
 這份文件說明如何把 api、GPU worker 與 Redis 部署到一台有 NVIDIA GPU 的單節點 k3s 叢集。清單在 `deploy/k8s/`：`base/` 與叢集無關，`overlays/k3s-single-node/` 加上單節點特有的設定（Namespace `openmot`、NodePort 30080、`local-path` 儲存、權重路徑與映像標籤）。
 
-> **未經實機驗證。** 目前沒有可用的 k3s 環境（沒有宿主機或獨立 VM，Docker daemon 上的特權 k3s 受節點 inotify 限制無法啟動），因此本文的指令尚未在真實叢集上執行過。清單本身有渲染測試與 schema 檢查，但映像載入、GPU 排程與 Pod 重建後的復原都需要在外部叢集依本文逐步驗證（對應任務 4.1，待外部叢集執行）。
+> **未經實機驗證。** 目前沒有可用的 k3s 環境（沒有宿主機或獨立 VM，Docker daemon 上的特權 k3s 受節點 inotify 限制無法啟動），因此本文的指令尚未在真實叢集上執行過。清單本身有渲染測試與 schema 檢查，但映像載入、GPU 排程與 Pod 重建後的復原都需要在外部叢集依本文逐步驗證（由後續變更 `verify-kubernetes-on-cluster` 承接）。
 
 ## 驗證環境
 
@@ -182,9 +182,9 @@ kubectl delete -k deploy/k8s/overlays/k3s-single-node
 
 ## 外部叢集驗證手冊
 
-下面的步驟尚未在任何叢集上執行過（對應任務 4.1 到 4.5），在有 k3s 與 GPU 的外部叢集依序執行，並把結果填回這份文件。
+下面的步驟尚未在任何叢集上執行過（由後續變更 `verify-kubernetes-on-cluster` 承接），在有 k3s 與 GPU 的外部叢集依序執行，並把結果填回這份文件。
 
-### 4.1 冷部署
+### 冷部署
 
 完成「前置條件」「部署」「套用」後：
 
@@ -194,7 +194,7 @@ kubectl -n openmot get pods
 
 預期 `redis-0`、`api-*`、`worker-*` 都是 `Running`，`/health` 回 `200`。沒有 GPU 的叢集預期是：worker 維持 `Pending`，事件為 `Insufficient nvidia.com/gpu`，api 與 Redis 不受影響。
 
-### 4.2 端對端結果與 CLI 逐位元組相同
+### 端對端結果與 CLI 逐位元組相同
 
 用 MOT17-09-FRCNN 的 525 張影格打包後提交（打包方式見 `docs/service.md`），輪詢到 `succeeded` 後取回結果，與命令列的輸出比對：
 
@@ -205,7 +205,7 @@ cmp /tmp/cli.txt /tmp/k8s.txt
 
 預期 `cmp` 沒有輸出。並記錄上傳、處理與總耗時（本機 compose 的數字見 `docs/service.md`）。
 
-### 4.3 處理中刪除 worker
+### 處理中刪除 worker
 
 Job 變成 `running` 後：
 
@@ -215,7 +215,7 @@ kubectl -n openmot delete pod -l app.kubernetes.io/name=worker
 
 預期替代的 worker Ready 後 Job 變成 `succeeded`，Result 與 CLI 相同。記錄所花時間。
 
-### 4.4 重建 api、worker 與 Redis 後仍可取回
+### 重建 api、worker 與 Redis 後仍可取回
 
 Job `succeeded` 後：
 
@@ -227,7 +227,7 @@ kubectl -n openmot delete pod -l app.kubernetes.io/name=redis
 
 等 Pod 重新就緒後，預期 `GET /jobs/{job_id}` 仍是 `succeeded` 且 Result 可取回。
 
-### 4.5 校正資源值
+### 校正資源值
 
 處理 MOT17 序列期間量測（k3s 預設附有 metrics-server）：
 
@@ -245,7 +245,7 @@ kubectl top pods -n openmot
 
 ### 叢集整合測試
 
-上述 4.2 到 4.4 也有自動化的版本，會部署 overlay、提交 Job 並刪除 Pod。它只在明確設定 `KUBECONFIG`、叢集可連、節點有 GPU、而且叢集上**尚未有** `openmot` Namespace 時才會執行（結束時會刪除整個 Namespace），否則 skip 並說明原因：
+上述端對端、處理中刪除 worker、重建 Pod 也有自動化的版本，會部署 overlay、提交 Job 並刪除 Pod。它只在明確設定 `KUBECONFIG`、叢集可連、節點有 GPU、而且叢集上**尚未有** `openmot` Namespace 時才會執行（結束時會刪除整個 Namespace），否則 skip 並說明原因：
 
 ```shell
 KUBECONFIG=/etc/rancher/k3s/k3s.yaml python -m pytest -m integration tests/test_k8s_e2e.py -rs

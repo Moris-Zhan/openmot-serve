@@ -35,7 +35,7 @@
 
 ### D3：先做環境可行性評估，有明確的通過條件與降級路徑
 可行性評估是第一個任務，不是前提假設。順序：(a) 使用者能提供宿主機或獨立 VM 與 kubeconfig；(b) 在 Docker daemon 上以特權容器執行 k3s（`rancher/k3s`），GPU 需要在映像中加入 NVIDIA Container Toolkit 並以 `--gpus all` 啟動；(c) 以上皆不可行時，停在第 1 層，完整保留清單，並在文件寫出在外部 k3s 叢集的部署與驗證指令。不在現有的開發容器內安裝 k3s。評估有時間上限，結果（含失敗原因）記錄在文件，tasks 依結果決定實機驗證的範圍，不把降級當成靜默跳過。
-**評估結論（已定）**：沒有宿主機或獨立 VM；Docker daemon 與開發環境同屬一個 Pod，特權 k3s 因節點 inotify 限制無法啟動；既有叢集 `ai-model` 是共用的 GPU 開發叢集，不列為部署目標。因此本變更停在第 1 層：清單、渲染測試與 schema 檢查完成，實機驗證（第 2、3 層與 spec 中需要叢集的情境，如冷部署、GPU 分配、Pod 重建後的復原）**尚未驗證**，以 `docs/kubernetes.md` 的外部執行手冊交付。
+**評估結論（已定）**：沒有宿主機或獨立 VM；Docker daemon 與開發環境同屬一個 Pod，特權 k3s 因節點 inotify 限制無法啟動；既有叢集 `ai-model` 是共用的 GPU 開發叢集，不列為部署目標。因此本變更停在第 1 層：清單、渲染測試與 schema 檢查完成，實機驗證（第 2、3 層與 spec 中需要叢集的情境，如冷部署、GPU 分配、Pod 重建後的復原）**尚未驗證**，以 `docs/kubernetes.md` 的外部執行手冊交付，並由後續變更 `verify-kubernetes-on-cluster` 承接（主規格只收錄無叢集即可檢查的清單屬性）。
 *替代方案*：kind——k3s 才是專案的目標環境，且 kind 的 GPU 支援更弱。
 
 ### D4：儲存用單一 local-path PVC，不加 podAffinity
