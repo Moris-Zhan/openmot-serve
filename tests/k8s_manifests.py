@@ -7,6 +7,7 @@ import yaml
 
 K8S_DIR = Path(__file__).resolve().parents[1] / "deploy" / "k8s"
 BASE_DIR = K8S_DIR / "base"
+K3S_OVERLAY_DIR = K8S_DIR / "overlays" / "k3s-single-node"
 
 requires_kustomize = pytest.mark.skipif(shutil.which("kustomize") is None, reason="the kustomize CLI is not installed")
 

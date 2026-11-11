@@ -17,7 +17,7 @@
 
 ## 3. k3s 單節點 overlay（kubernetes-deployment）
 
-- [ ] 3.1 建立 `deploy/k8s/overlays/k3s-single-node/`：Namespace `openmot`、Service 改 NodePort 30080、儲存類別、權重在節點上的路徑、映像名稱與標籤；先寫測試檢查渲染結果；驗證 `kustomize build` 成功且測試通過
+- [x] 3.1 建立 `deploy/k8s/overlays/k3s-single-node/`：Namespace `openmot`、Service 改 NodePort 30080、儲存類別、權重在節點上的路徑、映像名稱與標籤；先寫測試檢查渲染結果；驗證 `kustomize build` 成功且測試通過
 - [ ] 3.2 撰寫映像載入的指令（`docker save` 匯入 k3s 的 containerd）與權重放置的指令，放進 `docs/kubernetes.md` 的「部署」一節；驗證文件中的指令照字面執行能讓映像出現在叢集中（沒有叢集時，標明需要在 4.1 驗證）
 
 ## 4. 實機驗證（kubernetes-deployment）

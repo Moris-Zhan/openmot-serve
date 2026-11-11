@@ -1,0 +1,63 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: openmot
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+images:
+  - name: openmot-api
+    newTag: dev
+  - name: openmot-worker
+    newTag: dev
+
+patches:
+  - target:
+      kind: Service
+      name: api
+    patch: |-
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: api
+      spec:
+        type: NodePort
+        ports:
+          - name: http
+            port: 8000
+            nodePort: 30080
+  - target:
+      kind: PersistentVolumeClaim
+      name: openmot-storage
+    patch: |-
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: openmot-storage
+      spec:
+        storageClassName: local-path
+  - target:
+      kind: StatefulSet
+      name: redis
+    patch: |-
+      - op: add
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: local-path
+  - target:
+      kind: Deployment
+      name: worker
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: worker
+      spec:
+        template:
+          spec:
+            volumes:
+              - name: weights
+                hostPath:
+                  path: /var/lib/openmot/models/yolox_x.pth
+                  type: File
