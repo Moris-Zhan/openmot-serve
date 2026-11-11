@@ -6,7 +6,7 @@
 2. worker 取出 Job 執行追蹤（`running`），結束後變成 `succeeded` 或 `failed`。
 3. `GET /jobs/{job_id}` 查狀態，成功後 `GET /jobs/{job_id}/result` 取結果。
 
-> 本文目前涵蓋 HTTP API 與上傳規則；worker 與容器部署的說明由後續任務補齊。
+> 本文涵蓋 HTTP API、上傳規則、本機端對端驗證與容器部署。
 
 ## 在本機試用 API（假後端）
 
@@ -212,3 +212,102 @@ python -m app.run      # 監聽 0.0.0.0:8000
 - 重新投遞要等 `visibility_timeout`（等於鎖逾時），預設 1800 秒；上面的 126 秒是因為測試時縮短了逾時。
 
 所以 Job 不會永久停在 `running`，前提是 worker 會被重新啟動（compose 的 `restart` 政策負責這件事）。
+
+## 容器部署
+
+用 Docker Compose 一個指令啟動 Redis、API 與 GPU worker。
+
+### 前置條件
+
+- 一張 NVIDIA GPU（驗證環境為 RTX 5090，CUDA 12.8 以上）與對應的驅動程式。
+- Docker 與 Compose v2，並安裝 NVIDIA Container Toolkit。確認方式：`docker info --format '{{json .Runtimes}}'` 的輸出要含 `nvidia`。
+- 權重檔 `models/yolox_x.pth`。權重不會進映像，由 compose 以唯讀方式掛進 worker，worker 載入時會驗證 SHA-256。
+
+### 啟動
+
+在 repo 根目錄執行：
+
+```bash
+docker compose -f deploy/docker/docker-compose.yml up -d --build
+docker compose -f deploy/docker/docker-compose.yml ps
+```
+
+第一次建置 worker 映像需要數分鐘（含 cu128 版 torch，映像約 11 GB）。三個服務都顯示 `healthy` 後，API 會在 `http://127.0.0.1:8000`：
+
+```bash
+python -c "import httpx; print(httpx.get('http://127.0.0.1:8000/health').json())"
+```
+
+```text
+{'status': 'ok'}
+```
+
+提交與查詢的方式與前面的 API 章節相同。停止服務用 `docker compose -f deploy/docker/docker-compose.yml down`；加上 `-v` 會連同 Job 資料一起刪除。
+
+### 權重放置
+
+預設掛載 `models/yolox_x.pth`。權重在別的位置時，用 `OPENMOT_WEIGHTS_FILE` 指定：
+
+```shell
+OPENMOT_WEIGHTS_FILE=/data/weights/yolox_x.pth docker compose -f deploy/docker/docker-compose.yml up -d
+```
+
+bind mount 要求 Docker daemon 看得到該路徑。如果 daemon 在另一個檔案系統命名空間（遠端 daemon、某些容器內的 Docker），掛進去的會是空目錄，worker 會因為 `Is a directory` 而啟動失敗。這時改把權重放進具名 volume，再疊加 `docker-compose.weights-volume.yml`：
+
+```bash
+docker volume create openmot-weights
+docker create --name weights-loader -v openmot-weights:/models python:3.11-slim
+docker cp models/yolox_x.pth weights-loader:/models/yolox_x.pth
+docker rm weights-loader
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.weights-volume.yml up -d --build
+```
+
+### 環境變數
+
+compose 已替 api 與 worker 設好儲存目錄、Redis 位址與權重路徑。其餘變數沿用預設值；要調整時，在 `docker-compose.yml` 或自己的 override 檔的 `environment` 區段加入。無效值會讓服務在啟動時失敗，並指出是哪個變數。
+
+| 變數 | 預設值 | 使用者 | 說明 |
+| --- | --- | --- | --- |
+| `OPENMOT_STORAGE_DIR` | compose 設為 `/data/storage` | api、worker | 序列與結果的根目錄，必須是絕對路徑，必填 |
+| `OPENMOT_REDIS_URL` | compose 設為 `redis://redis:6379/0` | api、worker | Job Status 與佇列所在的 Redis |
+| `OPENMOT_WEIGHTS` | compose 設為 `/models/yolox_x.pth` | worker | 權重路徑，載入時驗證 SHA-256 |
+| `OPENMOT_PRECISION` | `fp16` | worker | 推論精度，`fp16` 或 `fp32` |
+| `OPENMOT_MAX_UPLOAD_BYTES` | 1 GiB | api | 上傳 zip 的大小上限 |
+| `OPENMOT_MAX_UNPACKED_BYTES` | 4 GiB | api | 解壓後總量上限，不可小於上傳上限 |
+| `OPENMOT_LOCK_TIMEOUT_SECONDS` | 1800 | worker | Job 鎖逾時，同時是訊息重新投遞的等待時間 |
+| `OPENMOT_TASK_TIME_LIMIT_SECONDS` | 1500 | worker | 單一 Job 的時間上限，必須小於鎖逾時 |
+
+Compose 層級的變數：`OPENMOT_API_PORT`（對外埠，預設 8000）、`OPENMOT_WEIGHTS_FILE`（主機上的權重路徑）。
+
+### 卷與資料保存
+
+| 卷 | 內容 | 重建容器後 |
+| --- | --- | --- |
+| `storage` | `jobs/<id>/frames/`、`result.txt`、`result.meta.json`，api 與 worker 共用 | 保留 |
+| `redis-data` | Redis 的 AOF（Job Status 與佇列） | 保留 |
+
+重建 api 或 worker（例如 `up -d --force-recreate`）不會遺失已完成 Job 的狀態與結果。序列與結果不會自動清理，需要時請自行刪除 `jobs/<id>/` 與對應的 Redis 鍵，磁碟用量要自行監控。
+
+### 疑難排解
+
+| 症狀 | 原因與處理 |
+| --- | --- |
+| `docker compose ps` 中 worker 一直是 `Restarting` | 看 `docker compose logs worker`。常見原因見下面三列 |
+| 日誌出現 `CUDA is not available to PyTorch` | 容器看不到 GPU。確認 NVIDIA Container Toolkit 已安裝，且 `docker info` 的 Runtimes 含 `nvidia`。worker 不會退回 CPU，會持續重啟直到能看到 GPU |
+| 日誌出現 `Is a directory: '/models/yolox_x.pth'` | daemon 看不到權重路徑，改用上面的具名 volume 做法 |
+| 日誌出現 SHA-256 不符 | 權重檔不是預期的 YOLOX-X 官方檔案，重新下載 |
+| `api` 是 `unhealthy`，或 `GET /health` 回 `503` | 回應的 `problems` 會指出是佇列後端還是儲存不可用 |
+| Job 停在 `running` | worker 在處理途中被終止。重新啟動 worker 後，訊息在鎖逾時之後被重新投遞並由新 worker 接手；預設最長約 30 分鐘 |
+| Job 停在 `queued` | worker 沒有在執行或不健康，啟動它之後會被處理 |
+| worker 在處理長 Job 時暫時顯示 `unhealthy` | solo pool 忙碌時不回應 ping；健康檢查容忍約 5 分鐘，超過時請對照日誌確認它仍在處理 |
+| 想在沒有 GPU 的機器上跑 | 不支援。可以用前面的假後端熟悉 API |
+
+### 容器端對端測試
+
+`integration` 標記的測試會真的起一組 compose、提交影格、重建容器並確認結果仍在。需要 Docker、nvidia runtime、權重與 MOT17 資料，缺任何一項會 skip 並說明原因：
+
+```shell
+python -m pytest -m integration tests/test_compose_e2e.py
+```
+
+daemon 看不到本機路徑時，用 `OPENMOT_E2E_COMPOSE_OVERRIDE=deploy/docker/docker-compose.weights-volume.yml` 指定上面的 volume 版 override。

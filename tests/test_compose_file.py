@@ -84,3 +84,15 @@ def test_services_reach_redis_by_its_service_name() -> None:
     services = _config()["services"]
     for name in ("api", "worker"):
         assert services[name]["environment"]["OPENMOT_REDIS_URL"] == "redis://redis:6379/0"
+
+
+def test_the_weights_volume_override_replaces_the_bind_mount() -> None:
+    override = COMPOSE_FILE.with_name("docker-compose.weights-volume.yml")
+    result = subprocess.run(
+        ["docker", "compose", "-f", str(COMPOSE_FILE), "-f", str(override), "config", "--format", "json"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    mounts = [v for v in json.loads(result.stdout)["services"]["worker"]["volumes"] if v["target"] == "/models/yolox_x.pth"]
+    assert len(mounts) == 1 and mounts[0]["type"] == "volume" and mounts[0]["read_only"] is True

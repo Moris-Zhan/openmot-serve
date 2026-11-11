@@ -1,0 +1,14 @@
+# Mount the weights from the named volume openmot-weights instead of a host path.
+services:
+  worker:
+    volumes:
+      - type: volume
+        source: weights
+        target: /models/yolox_x.pth
+        read_only: true
+        volume:
+          subpath: yolox_x.pth
+volumes:
+  weights:
+    external: true
+    name: openmot-weights

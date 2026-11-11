@@ -40,7 +40,7 @@
 
 ## 7. 文件與收尾
 
-- [ ] 7.1 在 `docs/service.md` 補上容器部署說明（前置條件含 NVIDIA Container Toolkit 與權重放置、`docker compose up`、環境變數表、卷與資料保存、疑難排解）；驗證文件中的指令照字面執行能啟動並完成一次提交
+- [x] 7.1 在 `docs/service.md` 補上容器部署說明（前置條件含 NVIDIA Container Toolkit 與權重放置、`docker compose up`、環境變數表、卷與資料保存、疑難排解）；驗證文件中的指令照字面執行能啟動並完成一次提交
 - [ ] 7.2 更新 README：勾選路線圖 v0.2、把 Status 改成反映 v0.2、API 與部署章節的 _planned_ 標記對應到實際已完成的部分；驗證 README 的端點表與實際 API 一致
 - [ ] 7.3 執行預設的完整測試（不含 `gpu`、`data`、`integration`）與 `openspec validate add-async-tracking-service --strict`；驗證兩者皆通過
 
