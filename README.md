@@ -2,7 +2,7 @@
 
 Multi-object tracking (MOT17/MOT20) as a production service: FastAPI + Docker + Kubernetes + CI/CD, evaluated with HOTA.
 
-> **Status: v0.1 done — tracking pipeline and benchmark.** `python -m eval.run` tunes on the MOT17 tuning half and reports HOTA / MOTA / IDF1 on the validation half (see [`docs/evaluation.md`](docs/evaluation.md)). The API, worker, containers and Kubernetes parts below are still _planned_ and are the design this repository is being built against. Design decisions live in [`docs/adr/`](docs/adr/); domain terms are defined in [`CONTEXT.md`](CONTEXT.md).
+> **Status: v0.2 done — async service and containers.** The tracking pipeline and benchmark (v0.1) are unchanged: `python -m eval.run` tunes on the MOT17 tuning half and reports HOTA / MOTA / IDF1 on the validation half (see [`docs/evaluation.md`](docs/evaluation.md)). On top of it, an HTTP API, a Celery GPU worker and a Docker Compose stack are working; see [`docs/service.md`](docs/service.md) for the API, the container deployment and the end-to-end results. The Kubernetes, CI and observability parts below are still _planned_ and are the design this repository is being built against. Design decisions live in [`docs/adr/`](docs/adr/); domain terms are defined in [`CONTEXT.md`](CONTEXT.md).
 
 ## What this project demonstrates
 
@@ -16,9 +16,9 @@ Multi-object tracking (MOT17/MOT20) as a production service: FastAPI + Docker + 
 | Inference optimization | Detector INT8 quantization with before/after latency and HOTA |
 | Engineering judgement | Detector chosen for license compatibility ([ADR-0001](docs/adr/0001-detector-yolox-for-license.md)) |
 
-## How it works _(planned)_
+## How it works
 
-A client submits a **sequence** (a video or a folder of frames) as a **tracking job**. The API stores the sequence and enqueues the job. A GPU worker detects people with **YOLOX**, links detections into **tracks** with **ByteTrack**, and writes the **result** in MOTChallenge format. The client polls the job until it succeeds, then downloads the result.
+A client submits a **sequence** (a zip of numbered frames) as a **tracking job**. The API stores the sequence and enqueues the job. A GPU worker detects people with **YOLOX**, links detections into **tracks** with **ByteTrack**, and writes the **result** in MOTChallenge format. The client polls the job until it succeeds, then downloads the result.
 
 ```mermaid
 sequenceDiagram
@@ -26,7 +26,7 @@ sequenceDiagram
     participant A as API (FastAPI)
     participant Q as Redis
     participant W as Worker (Celery, GPU)
-    participant S as Storage (PV)
+    participant S as Storage (shared volume)
 
     C->>A: POST /jobs (sequence)
     A->>S: save sequence
@@ -75,28 +75,29 @@ flowchart LR
 | Monitoring | Prometheus + Grafana | Latency, throughput, job failures |
 | CI | GitHub Actions | Lint, test, build image |
 
-## API _(planned)_
+## API
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/jobs` | Submit a sequence; returns `job_id` with `202 Accepted` |
+| `POST` | `/jobs` | Submit a zip of numbered frames; returns `job_id` with `202 Accepted` |
 | `GET` | `/jobs/{job_id}` | Job status: `queued`, `running`, `succeeded`, `failed` |
 | `GET` | `/jobs/{job_id}/result` | Tracks in MOTChallenge format (only when `succeeded`) |
-| `GET` | `/health` | Liveness / readiness |
-| `GET` | `/metrics` | Prometheus metrics |
+| `GET` | `/health` | Readiness: `200` when the queue and storage are usable, otherwise `503` with the problems |
+| `GET` | `/metrics` | Prometheus metrics _(planned, v0.4)_ |
 
-## Repository layout _(planned)_
+## Repository layout
 
 ```
 openmot-serve/
-├── app/          # FastAPI service: routes, schemas, job submission
-├── worker/       # Celery worker: runs tracking jobs
+├── app/          # FastAPI service: routes, upload validation, entrypoint
+├── jobs/         # Job records, state machine, Redis store, settings, storage layout
+├── worker/       # Celery worker: job processing, startup checks, healthcheck
 ├── tracking/     # Detection (YOLOX) + tracking (ByteTrack) pipeline
 ├── eval/         # TrackEval benchmark runs on the MOT17 validation half
 ├── deploy/
 │   ├── docker/   # Dockerfiles, docker-compose
-│   └── k8s/      # k3s manifests
-├── monitoring/   # Prometheus rules, Grafana dashboards
+│   └── k8s/      # k3s manifests (planned, v0.3)
+├── monitoring/   # Prometheus rules, Grafana dashboards (planned, v0.4)
 ├── data/         # download_mot.sh (datasets are never committed)
 ├── tests/
 └── docs/
@@ -143,9 +144,9 @@ COCO 預訓練權重，未針對 MOT17 微調；數字不可與 ByteTrack 論文
 - [x] HOTA, MOTA, IDF1 on the validation half with TrackEval
 
 ### v0.2 — Async service and containers
-- [ ] Tracking-job API (`/jobs`, `/jobs/{id}`, `/jobs/{id}/result`)
-- [ ] Celery worker + Redis queue
-- [ ] Dockerfiles and docker-compose for API, worker and Redis
+- [x] Tracking-job API (`/jobs`, `/jobs/{id}`, `/jobs/{id}/result`)
+- [x] Celery worker + Redis queue
+- [x] Dockerfiles and docker-compose for API, worker and Redis
 
 ### v0.3 — Kubernetes
 - [ ] k3s manifests: api, worker, redis, persistent volume
