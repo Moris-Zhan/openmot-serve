@@ -1,8 +1,9 @@
 import shutil
 import subprocess
+import re
 from pathlib import Path
 
-from k8s_manifests import K3S_OVERLAY_DIR, of_kind, render, requires_kustomize
+from k8s_manifests import BASE_DIR, K3S_OVERLAY_DIR, of_kind, render, requires_kustomize
 from tracking.yolox import WEIGHTS_SHA256
 
 DOC = Path(__file__).resolve().parents[1] / "docs" / "kubernetes.md"
@@ -80,3 +81,66 @@ def test_the_environment_section_explains_why_there_is_no_cluster_and_the_chosen
     assert "too many open files" in text
     assert "無叢集" in text
     assert "ai-model" in text
+
+
+SECTIONS_IN_ORDER = ["## 驗證環境", "## 前置條件", "## 部署", "## 套用", "## 設定值", "## 儲存與資料保存", "## 疑難排解", "## 外部叢集驗證手冊"]
+KIND_BY_ALIAS = {"deployment": "Deployment", "statefulset": "StatefulSet", "service": "Service", "svc": "Service", "pvc": "PersistentVolumeClaim"}
+
+
+def test_the_guide_has_every_section_in_reading_order() -> None:
+    text = _text()
+    positions = [text.index(heading) for heading in SECTIONS_IN_ORDER]
+    assert positions == sorted(positions)
+
+
+def test_the_apply_command_points_at_the_overlay_and_the_health_check_at_its_node_port() -> None:
+    text = _text()
+    assert "kubectl apply -k deploy/k8s/overlays/k3s-single-node" in text
+    assert K3S_OVERLAY_DIR.is_dir()
+    assert ":30080/health" in text
+
+
+@requires_kustomize
+def test_every_workload_the_guide_names_exists_in_the_rendered_overlay() -> None:
+    documents = render(K3S_OVERLAY_DIR)
+    existing = {(document["kind"], document["metadata"]["name"]) for document in documents}
+    references = re.findall(r"\b(deployment|statefulset|service|svc|pvc)/([a-z0-9-]+)", _text())
+    assert references
+    for alias, name in references:
+        assert (KIND_BY_ALIAS[alias], name) in existing, f"{alias}/{name} is not rendered by the overlay"
+
+
+@requires_kustomize
+def test_every_configuration_variable_is_documented() -> None:
+    text = _text()
+    names = of_kind(render(BASE_DIR), "ConfigMap")[0]["data"]
+    missing = [name for name in names if f"`{name}`" not in text]
+    assert missing == []
+
+
+def test_the_guide_explains_how_removing_workloads_differs_from_removing_the_data() -> None:
+    text = _text()
+    assert "kubectl delete -k deploy/k8s/overlays/k3s-single-node" in text
+    assert "kubectl -n openmot delete deployment/api deployment/worker" in text
+    assert "local-path" in text and "備份" in text
+
+
+def test_the_troubleshooting_section_covers_the_known_failure_modes() -> None:
+    text = _text()
+    for symptom in ("ErrImagePull", "Insufficient nvidia.com/gpu", "NotReady", "Permission denied", "CrashLoopBackOff"):
+        assert symptom in text, symptom
+
+
+def test_the_external_runbook_covers_each_unverified_check_and_how_to_record_it() -> None:
+    text = _text()
+    runbook = text[text.index("## 外部叢集驗證手冊"):]
+    for expected in (
+        "kubectl -n openmot get pods",
+        "python -m tracking.run",
+        "cmp",
+        "kubectl -n openmot delete pod -l app.kubernetes.io/name=worker",
+        "kubectl -n openmot delete pod -l app.kubernetes.io/name=redis",
+        "kubectl top pods -n openmot",
+        "pytest -m integration tests/test_k8s_e2e.py",
+    ):
+        assert expected in runbook, expected

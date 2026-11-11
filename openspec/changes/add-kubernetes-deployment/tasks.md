@@ -33,7 +33,7 @@
 
 ## 5. 文件與收尾（kubernetes-deployment）
 
-- [ ] 5.1 完成 `docs/kubernetes.md`：前置條件（驅動、Container Toolkit、裝置外掛、k3s）、映像與權重、`kubectl apply -k`、設定值、儲存與資料保存、移除工作負載與連資料一起移除的差別、疑難排解（`ErrImagePull`、`Insufficient nvidia.com/gpu`、worker 忙碌時 NotReady、PVC 權限）；驗證文件中的指令照字面執行（或標明未能實測的部分）
+- [x] 5.1 完成 `docs/kubernetes.md`：前置條件（驅動、Container Toolkit、裝置外掛、k3s）、映像與權重、`kubectl apply -k`、設定值、儲存與資料保存、移除工作負載與連資料一起移除的差別、疑難排解（`ErrImagePull`、`Insufficient nvidia.com/gpu`、worker 忙碌時 NotReady、PVC 權限）；驗證文件中的指令照字面執行（或標明未能實測的部分）
 - [ ] 5.2 更新 README：勾選路線圖 v0.3 中已完成的項目並如實標示未完成者、Status 改成反映 v0.3、把部署架構章節的 _planned_ 標記對應到實際範圍（GPU Operator 不在範圍內，需如實寫明）；驗證 README 的說法與清單一致
 - [ ] 5.3 執行預設的完整測試（不含 `gpu`、`data`、`integration`）與 `openspec validate add-kubernetes-deployment --strict`；驗證兩者皆通過
 
