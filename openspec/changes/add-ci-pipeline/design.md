@@ -41,7 +41,7 @@ Python 3.11（與 Dockerfile 一致，`requires-python` 是 `>=3.11,<3.13`，只
 *替代方案*：`ruff format --check`——使用者已決定不加，因為會重新排版 41 個檔案。
 
 ### D6：CI 內安裝並驗證清單工具
-下載 `kustomize` v5.5.0 與 `kubeconform` v0.6.7 的官方 linux/amd64 發行檔，與官方公布的 SHA-256 比對，失敗即中止；安裝後執行 `kustomize version` 與 `kubeconform -v`，缺任何一個就在跑測試前失敗。`kubeconform` 需要下載 Kubernetes schema，runner 有網路，沒有問題；快取 schema 目錄可加速但不是必要。
+下載 `kubectl` v1.31.4、`kustomize` v5.5.0 與 `kubeconform` v0.6.7 的官方 linux/amd64 發行檔，與官方公布的 SHA-256 比對，失敗即中止；安裝後執行 `kubectl version --client`、`kustomize version` 與 `kubeconform -v`，缺任何一個就在跑測試前失敗。kubectl 也要固定：runner 預裝的是較新版本（首次真實執行時為 v1.37.2），而 `docs/kubernetes.md` 記錄的版本由既有測試比對，不能放寬。`kubeconform` 需要下載 Kubernetes schema，runner 有網路，沒有問題；快取 schema 目錄可加速但不是必要。
 
 ### D7：api 映像每次建置、不推送
 `build-api` 用 `docker/build-push-action` 以 `push: false` 建置 `deploy/docker/api.Dockerfile`，並啟用 GitHub Actions 的建置快取（api 很小，不會超過快取上限）。建置後執行容器的 `python -c "import app.run"` 做冒煙檢查，確認映像內的相依套件完整。
