@@ -111,13 +111,14 @@ def test_no_job_requests_a_gpu_runner() -> None:
         assert "gpu" not in str(job["runs-on"]).lower()
 
 
-MANIFEST_TOOLS = ("kustomize", "kubeconform")
+MANIFEST_TOOLS = ("kubectl", "kustomize", "kubeconform")
 SHA256_DIGEST = re.compile(r"(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])")
 
 
 def _documented_tool_versions() -> dict[str, str]:
     table = (REPOSITORY_ROOT / "docs" / "kubernetes.md").read_text()
-    return {tool: version for tool, version in re.findall(r"^\| (kustomize|kubeconform) \| (v[\d.]+) \|", table, re.M)}
+    rows = re.findall(r"^\| (kubectl|kustomize|kubeconform) \| (v[\d.]+) \|", table, re.M)
+    return dict(rows)
 
 
 def _tool_install_command() -> str:
@@ -268,4 +269,5 @@ def test_no_credential_is_written_into_the_workflow_as_plain_text() -> None:
 def test_a_missing_manifest_tool_fails_before_the_tests_run() -> None:
     checks = [index for index, command in enumerate(_commands("test")) if "kustomize version" in command]
     assert checks and "kubeconform -v" in _commands("test")[checks[0]]
+    assert "kubectl version --client" in _commands("test")[checks[0]]
     assert checks[0] < _index_of_command("test", "pytest")

@@ -37,19 +37,22 @@ jobs:
         run: pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cpu
       - name: Install the package
         run: pip install -e ".[dev,service]"
-      - name: Install kustomize and kubeconform
+      - name: Install kubectl, kustomize and kubeconform
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP"
+          curl -fsSL -o kubectl https://dl.k8s.io/release/v1.31.4/bin/linux/amd64/kubectl
+          echo "298e19e9c6c17199011404278f0ff8168a7eca4217edad9097af577023a5620f  kubectl" | sha256sum --check
           curl -fsSL -o kustomize.tar.gz https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz
           echo "6703a3a70a0c47cf0b37694030b54f1175a9dfeb17b3818b623ed58b9dbc2a77  kustomize.tar.gz" | sha256sum --check
           curl -fsSL -o kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
           echo "95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73  kubeconform.tar.gz" | sha256sum --check
           tar -xzf kustomize.tar.gz kustomize
           tar -xzf kubeconform.tar.gz kubeconform
-          sudo install -m 0755 kustomize kubeconform /usr/local/bin/
+          sudo install -m 0755 kubectl kustomize kubeconform /usr/local/bin/
       - name: Check the manifest tools
         run: |
+          kubectl version --client
           kustomize version
           kubeconform -v
       - name: Run the default tests
