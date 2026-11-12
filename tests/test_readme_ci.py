@@ -25,16 +25,15 @@ def test_the_status_headline_reports_v0_4_ci_done_and_keeps_the_v0_3_caveat() ->
     assert "v0.3" in headline and "not yet verified" in headline
 
 
-def test_the_status_links_the_ci_guide_and_keeps_observability_planned() -> None:
+def test_the_status_links_the_ci_guide_and_the_observability_guide() -> None:
     status_line = README.split("> **Status:")[1].split("\n")[0]
     assert "docs/ci.md" in status_line
-    assert "observability" in status_line.lower() and "planned" in status_line
+    assert "docs/observability.md" in status_line
 
 
-def test_the_ci_and_publish_items_are_ticked_and_observability_stays_open() -> None:
+def test_the_ci_and_publish_items_are_ticked() -> None:
     assert _item("GitHub Actions")
     assert _item("Publish the api and worker images")
-    assert not _item("Prometheus metrics")
 
 
 def test_the_repository_layout_lists_the_workflow_directory() -> None:
