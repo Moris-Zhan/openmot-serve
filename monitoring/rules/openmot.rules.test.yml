@@ -1,0 +1,196 @@
+rule_files:
+  - openmot.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: the api target is down
+    interval: 1m
+    input_series:
+      - series: 'up{job="openmot-api", instance="api:9101"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ApiDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: openmot-api
+              instance: "api:9101"
+            exp_annotations:
+              summary: "The openmot api is down or its metrics port is not reachable."
+
+  - name: a healthy api does not alert
+    interval: 1m
+    input_series:
+      - series: 'up{job="openmot-api", instance="api:9101"}'
+        values: "1x20"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ApiDown
+        exp_alerts: []
+
+  - name: a target that is down for less than a minute does not alert
+    interval: 1m
+    input_series:
+      - series: 'up{job="openmot-api", instance="api:9101"}'
+        values: "1x5 0 1x14"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ApiDown
+        exp_alerts: []
+
+  - name: a healthy worker does not alert
+    interval: 1m
+    input_series:
+      - series: 'up{job="openmot-worker", instance="worker:9102"}'
+        values: "1x20"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: WorkerDown
+        exp_alerts: []
+
+  - name: only the worker is down
+    interval: 1m
+    input_series:
+      - series: 'up{job="openmot-api", instance="api:9101"}'
+        values: "1x20"
+      - series: 'up{job="openmot-worker", instance="worker:9102"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: WorkerDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: openmot-worker
+              instance: "worker:9102"
+            exp_annotations:
+              summary: "The openmot worker is down or its metrics port is not reachable."
+      - eval_time: 5m
+        alertname: ApiDown
+        exp_alerts: []
+
+  - name: a high share of failed jobs alerts
+    interval: 1m
+    input_series:
+      - series: 'openmot_jobs_total{outcome="failed"}'
+        values: "0+1x30"
+      - series: 'openmot_jobs_total{outcome="succeeded"}'
+        values: "0+1x30"
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: HighJobFailureRatio
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "More than 20% of the jobs of the last 15 minutes failed."
+
+  - name: a low share of failed jobs does not alert
+    interval: 1m
+    input_series:
+      - series: 'openmot_jobs_total{outcome="failed"}'
+        values: "0+1x30"
+      - series: 'openmot_jobs_total{outcome="succeeded"}'
+        values: "0+10x30"
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: HighJobFailureRatio
+        exp_alerts: []
+
+  - name: a single failed job does not alert even though its share is 100 percent
+    interval: 1m
+    input_series:
+      - series: 'openmot_jobs_total{outcome="failed"}'
+        values: "0x19 1x20"
+      - series: 'openmot_jobs_total{outcome="succeeded"}'
+        values: "0x39"
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: HighJobFailureRatio
+        exp_alerts: []
+
+  - name: a backlog that lasts alerts
+    interval: 1m
+    input_series:
+      - series: "openmot_queue_depth"
+        values: "11x30"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: JobQueueBacklog
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "More than 10 jobs have been waiting for a worker for 10 minutes."
+
+  - name: a queue of exactly ten jobs does not alert
+    interval: 1m
+    input_series:
+      - series: "openmot_queue_depth"
+        values: "10x30"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: JobQueueBacklog
+        exp_alerts: []
+
+  - name: a backlog that clears quickly does not alert
+    interval: 1m
+    input_series:
+      - series: "openmot_queue_depth"
+        values: "11x5 0x25"
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: JobQueueBacklog
+        exp_alerts: []
+
+  - name: a missing queue depth does not alert
+    interval: 1m
+    input_series:
+      - series: 'up{job="openmot-api", instance="api:9101"}'
+        values: "1x30"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: JobQueueBacklog
+        exp_alerts: []
+
+  - name: a high share of server errors alerts
+    interval: 1m
+    input_series:
+      - series: 'openmot_http_requests_total{method="GET", route="/health", status="503"}'
+        values: "0+1x30"
+      - series: 'openmot_http_requests_total{method="GET", route="/health", status="200"}'
+        values: "0+9x30"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: HighApiErrorRatio
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "More than 5% of the api requests of the last 5 minutes ended with a 5xx status."
+
+  - name: a low share of server errors does not alert
+    interval: 1m
+    input_series:
+      - series: 'openmot_http_requests_total{method="GET", route="/health", status="503"}'
+        values: "0+1x30"
+      - series: 'openmot_http_requests_total{method="GET", route="/health", status="200"}'
+        values: "0+99x30"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: HighApiErrorRatio
+        exp_alerts: []
+
+  - name: server errors among very few requests do not alert even though their share is 100 percent
+    interval: 1m
+    input_series:
+      - series: 'openmot_http_requests_total{method="GET", route="/health", status="503"}'
+        values: "0+1x30"
+      - series: 'openmot_http_requests_total{method="GET", route="/health", status="200"}'
+        values: "0x30"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: HighApiErrorRatio
+        exp_alerts: []

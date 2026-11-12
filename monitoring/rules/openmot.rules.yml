@@ -1,0 +1,52 @@
+groups:
+  - name: openmot-availability
+    rules:
+      - alert: ApiDown
+        expr: up{job="openmot-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "The openmot api is down or its metrics port is not reachable."
+      - alert: WorkerDown
+        expr: up{job="openmot-worker"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "The openmot worker is down or its metrics port is not reachable."
+
+  - name: openmot-jobs
+    rules:
+      - alert: HighJobFailureRatio
+        expr: |
+          sum(increase(openmot_jobs_total{outcome="failed"}[15m]))
+            / sum(increase(openmot_jobs_total{outcome=~"succeeded|failed"}[15m])) > 0.2
+          and
+          sum(increase(openmot_jobs_total{outcome=~"succeeded|failed"}[15m])) >= 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 20% of the jobs of the last 15 minutes failed."
+      - alert: JobQueueBacklog
+        expr: openmot_queue_depth > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 10 jobs have been waiting for a worker for 10 minutes."
+
+  - name: openmot-api
+    rules:
+      - alert: HighApiErrorRatio
+        expr: |
+          sum(rate(openmot_http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(openmot_http_requests_total[5m])) > 0.05
+          and
+          sum(increase(openmot_http_requests_total[5m])) >= 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 5% of the api requests of the last 5 minutes ended with a 5xx status."

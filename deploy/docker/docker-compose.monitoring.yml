@@ -1,0 +1,31 @@
+# Layer this file on top of docker-compose.yml to add Prometheus and Grafana:
+#   GRAFANA_ADMIN_PASSWORD=... docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up
+# The api and worker metrics ports stay on the compose network; nothing here publishes them.
+services:
+  prometheus:
+    build:
+      context: ../..
+      dockerfile: monitoring/prometheus.Dockerfile
+    image: openmot-prometheus:dev
+    ports:
+      - "127.0.0.1:${OPENMOT_PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+
+  grafana:
+    build:
+      context: ../..
+      dockerfile: monitoring/grafana.Dockerfile
+    image: openmot-grafana:dev
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD to a password of your choice}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "127.0.0.1:${OPENMOT_GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:

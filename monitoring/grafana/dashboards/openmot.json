@@ -1,0 +1,138 @@
+{
+  "id": null,
+  "uid": "openmot-overview",
+  "title": "openmot",
+  "tags": ["openmot"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-3h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "請求率",
+      "description": "api 每秒處理的請求數，依路由模板分類。",
+      "datasource": {"type": "prometheus", "uid": "openmot-prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "openmot-prometheus"},
+          "expr": "sum by (route) (rate(openmot_http_requests_total[5m]))",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "API 延遲 (p95)",
+      "description": "api 處理請求的第 95 百分位時間，依路由模板分類。",
+      "datasource": {"type": "prometheus", "uid": "openmot-prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "openmot-prometheus"},
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(openmot_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "5xx 比例",
+      "description": "以 5xx 結束的請求占全部請求的比例。",
+      "datasource": {"type": "prometheus", "uid": "openmot-prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "openmot-prometheus"},
+          "expr": "sum(rate(openmot_http_requests_total{status=~\"5..\"}[5m])) / sum(rate(openmot_http_requests_total[5m]))",
+          "legendFormat": "5xx"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "工作結果",
+      "description": "worker 每 5 分鐘處理完的工作數，依結果分類（succeeded、failed、skipped）。",
+      "datasource": {"type": "prometheus", "uid": "openmot-prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "openmot-prometheus"},
+          "expr": "sum by (outcome) (increase(openmot_jobs_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "工作耗時 (p50 / p95)",
+      "description": "實際執行的工作的處理時間（不含排隊與略過的工作）。",
+      "datasource": {"type": "prometheus", "uid": "openmot-prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "openmot-prometheus"},
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(openmot_job_duration_seconds_bucket[15m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "datasource": {"type": "prometheus", "uid": "openmot-prometheus"},
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(openmot_job_duration_seconds_bucket[15m])))",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "影格吞吐 (FPS)",
+      "description": "成功的工作每秒處理的影格數。",
+      "datasource": {"type": "prometheus", "uid": "openmot-prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "openmot-prometheus"},
+          "expr": "sum(rate(openmot_frames_processed_total[5m]))",
+          "legendFormat": "frames/s"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "佇列深度",
+      "description": "等待 worker 取走的工作數（正在處理的工作不計；Redis 無法連線時沒有資料）。",
+      "datasource": {"type": "prometheus", "uid": "openmot-prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "prometheus", "uid": "openmot-prometheus"},
+          "expr": "openmot_queue_depth",
+          "legendFormat": "waiting"
+        }
+      ]
+    }
+  ]
+}
