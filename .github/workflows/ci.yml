@@ -55,6 +55,16 @@ jobs:
           kubectl version --client
           kustomize version
           kubeconform -v
+      - name: Install promtool
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o prometheus.tar.gz https://github.com/prometheus/prometheus/releases/download/v2.55.1/prometheus-2.55.1.linux-amd64.tar.gz
+          echo "19700bdd42ec31ee162e4079ebda4cd0a44432df4daa637141bdbea4b1cd8927  prometheus.tar.gz" | sha256sum --check
+          tar -xzf prometheus.tar.gz --strip-components=1 prometheus-2.55.1.linux-amd64/promtool
+          sudo install -m 0755 promtool /usr/local/bin/
+      - name: Check promtool
+        run: promtool --version
       - name: Run the default tests
         run: python -m pytest
 

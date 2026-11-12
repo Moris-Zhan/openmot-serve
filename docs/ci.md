@@ -11,11 +11,13 @@
 | 工作 | 觸發 | 做什麼 |
 |---|---|---|
 | `lint` | 每次 push 與 pull request | 以固定版本的 ruff 執行 `ruff check .`，不做格式檢查 |
-| `test` | 每次 push 與 pull request | 安裝 CPU 版 PyTorch、套件與固定版本的 kubectl、kustomize、kubeconform，執行預設測試 |
+| `test` | 每次 push 與 pull request | 安裝 CPU 版 PyTorch、套件與固定版本的 kubectl、kustomize、kubeconform、promtool，執行預設測試 |
 | `build-api` | 每次 push 與 pull request | 建置 api 映像（不推送），並以容器匯入 `app.run` 做冒煙檢查 |
 | `publish` | 只有 push 到 `main`，且前三項都通過 | 建置並推送 api 與 worker 映像到 GHCR |
 
 `test` 使用 Python 3.11，與 Dockerfile 一致。kubectl、kustomize 與 kubeconform 的版本記錄在 [`docs/kubernetes.md`](kubernetes.md)，CI 下載官方發行檔並比對 SHA-256，校驗失敗或缺任何工具會在跑測試前就失敗，所以 Kubernetes 清單的測試不會被靜默略過。
+
+警報規則的單元測試需要 `promtool`。它跟著 Prometheus 的發行檔一起發佈，CI 在獨立的步驟安裝 Prometheus v2.55.1 的 `promtool`（與監控映像 `monitoring/prometheus.Dockerfile` 的基底是同一個版本），同樣先比對 SHA-256 再安裝，並在跑測試前執行 `promtool --version`，缺少時會在這裡就失敗。升級 Prometheus 時，要同時改映像的基底版本、這個步驟的下載網址與校驗碼。
 
 ## 在本機重現
 
@@ -36,7 +38,7 @@ docker build -f deploy/docker/api.Dockerfile -t openmot-api:ci .
 docker run --rm openmot-api:ci python -c "import app.run"
 ```
 
-在一個乾淨的 Python 3.11 虛擬環境用上述指令，加上 kubectl、kustomize、kubeconform，預設測試全部通過，沒有被略過的項目（約 2 分鐘，大部分是下載相依套件）。沒有安裝這三個工具時，Kubernetes 清單的測試會被略過，這是本機的刻意設計，CI 則一定會執行。
+在一個乾淨的 Python 3.11 虛擬環境用上述指令，加上 kubectl、kustomize、kubeconform，預設測試全部通過，沒有被略過的項目（約 2 分鐘，大部分是下載相依套件）。沒有安裝這三個工具時，Kubernetes 清單的測試會被略過；沒有安裝 `promtool` 時，警報規則的兩個 promtool 測試會被略過並說明原因，其餘的規則結構檢查仍會執行。這是本機的刻意設計，CI 則一定會執行。
 
 ## 發佈的映像
 
