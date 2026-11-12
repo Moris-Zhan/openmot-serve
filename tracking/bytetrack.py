@@ -120,7 +120,7 @@ def assign(
     rows, columns = linear_sum_assignment(extended)
     matches = tuple(
         (int(row), int(column))
-        for row, column in zip(rows, columns)
+        for row, column in zip(rows, columns, strict=False)
         if row < row_count and column < column_count and cost[row, column] <= limit
     )
     matched_rows = {row for row, _ in matches}
@@ -159,7 +159,7 @@ def _drop_duplicates(
     distance = 1.0 - iou_matrix(_boxes_of(tracked), _boxes_of(lost))
     drop_tracked: set[int] = set()
     drop_lost: set[int] = set()
-    for tracked_index, lost_index in zip(*np.where(distance < DUPLICATE_DISTANCE)):
+    for tracked_index, lost_index in zip(*np.where(distance < DUPLICATE_DISTANCE), strict=False):
         tracked_age = tracked[tracked_index].frame - tracked[tracked_index].start_frame
         lost_age = lost[lost_index].frame - lost[lost_index].start_frame
         if tracked_age > lost_age:

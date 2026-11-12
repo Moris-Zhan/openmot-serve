@@ -33,7 +33,9 @@ def test_redis_persists_through_an_append_only_file_on_a_volume() -> None:
 def test_api_and_worker_share_one_named_storage_volume() -> None:
     config = _config()
     sources = {
-        name: {volume["source"] for volume in config["services"][name]["volumes"] if volume["target"] == "/data/storage"}
+        name: {
+            volume["source"] for volume in config["services"][name]["volumes"] if volume["target"] == "/data/storage"
+        }
         for name in ("api", "worker")
     }
     assert sources["api"] == sources["worker"] == {"storage"}
@@ -94,5 +96,7 @@ def test_the_weights_volume_override_replaces_the_bind_mount() -> None:
         text=True,
         check=True,
     )
-    mounts = [v for v in json.loads(result.stdout)["services"]["worker"]["volumes"] if v["target"] == "/models/yolox_x.pth"]
+    mounts = [
+        v for v in json.loads(result.stdout)["services"]["worker"]["volumes"] if v["target"] == "/models/yolox_x.pth"
+    ]
     assert len(mounts) == 1 and mounts[0]["type"] == "volume" and mounts[0]["read_only"] is True

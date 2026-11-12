@@ -208,7 +208,7 @@ class YOLOXHead(nn.Module):
     def _decode(self, outputs: torch.Tensor, grid_sizes: list[torch.Size]) -> torch.Tensor:
         grids = []
         strides = []
-        for (height, width), stride in zip(grid_sizes, self.strides):
+        for (height, width), stride in zip(grid_sizes, self.strides, strict=False):
             rows, columns = torch.meshgrid(
                 torch.arange(height, device=outputs.device),
                 torch.arange(width, device=outputs.device),

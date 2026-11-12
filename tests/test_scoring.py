@@ -3,7 +3,6 @@ from pathlib import Path
 import pytest
 
 import eval.vendor.trackeval as trackeval
-
 from eval.scoring import ScoreReport, Scores, ScoringError, score_sequences
 from tracking.motchallenge import ResultRow, format_result
 

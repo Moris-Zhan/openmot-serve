@@ -6,7 +6,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-
 from k8s_cluster import FRAMES, NAMESPACE, kubectl, real_probe, skip_reason
 from k8s_manifests import K3S_OVERLAY_DIR
 
@@ -125,7 +124,9 @@ def forward() -> Iterator[ApiForward]:
     try:
         kubectl("-n", NAMESPACE, "rollout", "status", "statefulset/redis", f"--timeout={ROLLOUT_TIMEOUT}")
         kubectl("-n", NAMESPACE, "wait", "--for=condition=available", "deployment/api", f"--timeout={ROLLOUT_TIMEOUT}")
-        kubectl("-n", NAMESPACE, "wait", "--for=condition=available", "deployment/worker", f"--timeout={ROLLOUT_TIMEOUT}")
+        kubectl(
+            "-n", NAMESPACE, "wait", "--for=condition=available", "deployment/worker", f"--timeout={ROLLOUT_TIMEOUT}"
+        )
         api_forward.restart()
         yield api_forward
     finally:
@@ -133,7 +134,9 @@ def forward() -> Iterator[ApiForward]:
         kubectl("delete", "-k", str(K3S_OVERLAY_DIR), "--wait=true", check=False)
 
 
-def test_a_job_succeeds_and_survives_recreating_the_api_and_worker_pods(forward: ApiForward, archives: dict[int, Path]) -> None:
+def test_a_job_succeeds_and_survives_recreating_the_api_and_worker_pods(
+    forward: ApiForward, archives: dict[int, Path]
+) -> None:
     job_id = _submit(archives[SHORT_FRAME_COUNT])
     result = _wait_succeeded(job_id)
     assert result.strip()
@@ -153,7 +156,9 @@ def test_the_job_status_survives_recreating_the_redis_pod(forward: ApiForward, a
     assert _status(job_id) == "succeeded"
 
 
-def test_deleting_the_worker_mid_job_still_ends_in_the_same_result(forward: ApiForward, archives: dict[int, Path]) -> None:
+def test_deleting_the_worker_mid_job_still_ends_in_the_same_result(
+    forward: ApiForward, archives: dict[int, Path]
+) -> None:
     baseline = _wait_succeeded(_submit(archives[LONG_FRAME_COUNT]))
 
     job_id = _submit(archives[LONG_FRAME_COUNT])

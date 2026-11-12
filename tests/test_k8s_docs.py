@@ -1,9 +1,10 @@
+import re
 import shutil
 import subprocess
-import re
 from pathlib import Path
 
 from k8s_manifests import BASE_DIR, K3S_OVERLAY_DIR, of_kind, render, requires_kustomize
+
 from tracking.yolox import WEIGHTS_SHA256
 
 DOC = Path(__file__).resolve().parents[1] / "docs" / "kubernetes.md"
@@ -15,7 +16,11 @@ def _text() -> str:
 
 def _overlay_images() -> set[str]:
     deployments = of_kind(render(K3S_OVERLAY_DIR), "Deployment")
-    return {container["image"] for deployment in deployments for container in deployment["spec"]["template"]["spec"]["containers"]}
+    return {
+        container["image"]
+        for deployment in deployments
+        for container in deployment["spec"]["template"]["spec"]["containers"]
+    }
 
 
 def _overlay_weights_path() -> str:
@@ -83,8 +88,23 @@ def test_the_environment_section_explains_why_there_is_no_cluster_and_the_chosen
     assert "ai-model" in text
 
 
-SECTIONS_IN_ORDER = ["## 驗證環境", "## 前置條件", "## 部署", "## 套用", "## 設定值", "## 儲存與資料保存", "## 疑難排解", "## 外部叢集驗證手冊"]
-KIND_BY_ALIAS = {"deployment": "Deployment", "statefulset": "StatefulSet", "service": "Service", "svc": "Service", "pvc": "PersistentVolumeClaim"}
+SECTIONS_IN_ORDER = [
+    "## 驗證環境",
+    "## 前置條件",
+    "## 部署",
+    "## 套用",
+    "## 設定值",
+    "## 儲存與資料保存",
+    "## 疑難排解",
+    "## 外部叢集驗證手冊",
+]
+KIND_BY_ALIAS = {
+    "deployment": "Deployment",
+    "statefulset": "StatefulSet",
+    "service": "Service",
+    "svc": "Service",
+    "pvc": "PersistentVolumeClaim",
+}
 
 
 def test_the_guide_has_every_section_in_reading_order() -> None:

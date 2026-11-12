@@ -1,6 +1,6 @@
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 MINIMUM_CUDA_VERSION: tuple[int, int] = (12, 8)
 

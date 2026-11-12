@@ -1,5 +1,4 @@
 import pytest
-
 from k8s_manifests import BASE_DIR, of_kind, render, requires_kustomize
 
 pytestmark = requires_kustomize

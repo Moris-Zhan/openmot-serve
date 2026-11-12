@@ -38,7 +38,9 @@ def _write_frames(directory: Path, count: int = 12) -> None:
 
 
 def _command_line_run(frames: Path, output: Path) -> None:
-    loader: Callable = lambda weights, precision, device: _detect_white_boxes
+    def loader(weights: object, precision: object, device: object) -> Callable:
+        return _detect_white_boxes
+
     assert main([str(frames), "--output", str(output)], load_detect_frame=loader) == 0
 
 

@@ -52,7 +52,7 @@ def test_second_call_with_the_same_key_hits_and_runs_no_detection(tmp_path: Path
     assert first_detector.calls == FRAME_COUNT
     assert second_detector.calls == 0
     assert len(second) == FRAME_COUNT
-    for before, after in zip(first, second):
+    for before, after in zip(first, second, strict=False):
         assert before.dtype == after.dtype == np.float64
         assert np.array_equal(before, after)
 

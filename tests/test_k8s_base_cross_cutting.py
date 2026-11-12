@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from k8s_manifests import BASE_DIR, render, requires_kustomize
 
 pytestmark = requires_kustomize

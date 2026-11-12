@@ -40,7 +40,7 @@ def _read_toml(path: Path) -> dict[str, object]:
 
 
 def _checked_value(key: str, value: object, path: Path) -> float | int:
-    is_number = isinstance(value, (int, float)) and not isinstance(value, bool)
+    is_number = isinstance(value, int | float) and not isinstance(value, bool)
     if key in _FLOAT_KEYS and is_number:
         return float(value)
     if key in _INT_KEYS and isinstance(value, int) and not isinstance(value, bool):

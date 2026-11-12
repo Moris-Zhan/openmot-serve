@@ -93,7 +93,9 @@ def _clear(directory: Path) -> None:
 def unpack_upload(stream: BinaryIO, staging: Path, limits: UploadLimits) -> int:
     try:
         with tempfile.TemporaryFile(dir=staging.parent, prefix="upload-zip-") as spool:
-            _copy_capped(stream, spool, limits.max_upload_bytes, f"upload is larger than {limits.max_upload_bytes} bytes")
+            _copy_capped(
+                stream, spool, limits.max_upload_bytes, f"upload is larger than {limits.max_upload_bytes} bytes"
+            )
             spool.seek(0)
             if not zipfile.is_zipfile(spool):
                 raise UploadRejected("the upload is not a zip archive")

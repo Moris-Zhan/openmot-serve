@@ -2,7 +2,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.run import build_app, main

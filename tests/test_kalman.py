@@ -3,7 +3,9 @@ import numpy as np
 from tracking.kalman import initiate, predict, update
 
 
-def measurement(center_x: float = 100.0, center_y: float = 200.0, aspect: float = 0.4, height: float = 100.0) -> np.ndarray:
+def measurement(
+    center_x: float = 100.0, center_y: float = 200.0, aspect: float = 0.4, height: float = 100.0
+) -> np.ndarray:
     return np.array([center_x, center_y, aspect, height])
 
 

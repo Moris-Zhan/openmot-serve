@@ -73,7 +73,9 @@ def _wait_until(condition, timeout: float, description: str) -> None:  # type: i
 
 
 def _wait_healthy(*services: str) -> None:
-    _wait_until(lambda: all(_health(name) == "healthy" for name in services), HEALTHY_TIMEOUT_SECONDS, f"{services} healthy")
+    _wait_until(
+        lambda: all(_health(name) == "healthy" for name in services), HEALTHY_TIMEOUT_SECONDS, f"{services} healthy"
+    )
 
 
 def _submit(archive: Path) -> str:

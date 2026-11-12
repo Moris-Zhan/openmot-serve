@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from tracking.config import ConfigError, RunMetadata, SUPPORTED_PRECISIONS, load_tracker_params
+from tracking.config import SUPPORTED_PRECISIONS, ConfigError, RunMetadata, load_tracker_params
 from tracking.detector import DetectorSettings, detect, load_detector
 from tracking.sequence import SequenceError, list_frames, track_sequence
 from tracking.yolox import WEIGHTS_ID, WEIGHTS_SHA256, WeightsIntegrityError

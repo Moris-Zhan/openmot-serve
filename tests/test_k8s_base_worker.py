@@ -4,7 +4,9 @@ pytestmark = requires_kustomize
 
 
 def _deployment() -> dict:
-    matches = [document for document in of_kind(render(BASE_DIR), "Deployment") if document["metadata"]["name"] == "worker"]
+    matches = [
+        document for document in of_kind(render(BASE_DIR), "Deployment") if document["metadata"]["name"] == "worker"
+    ]
     assert len(matches) == 1
     return matches[0]
 

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import yaml
+from k8s_manifests import BASE_DIR, of_kind, render, requires_kustomize
 
 from jobs.settings import (
     DEFAULT_LOCK_TIMEOUT_SECONDS,
@@ -9,7 +10,6 @@ from jobs.settings import (
     DEFAULT_TASK_TIME_LIMIT_SECONDS,
     load_settings,
 )
-from k8s_manifests import BASE_DIR, of_kind, render, requires_kustomize
 
 COMPOSE_FILE = Path(__file__).resolve().parents[1] / "deploy" / "docker" / "docker-compose.yml"
 

@@ -74,7 +74,9 @@ def _load(path: Path, key: CacheKey, frame_count: int) -> tuple[np.ndarray, ...]
 
 def _store(path: Path, key: CacheKey, detections: tuple[np.ndarray, ...]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    stacked = np.concatenate([np.asarray(frame, dtype=np.float64).reshape(-1, _DETECTION_COLUMNS) for frame in detections])
+    stacked = np.concatenate(
+        [np.asarray(frame, dtype=np.float64).reshape(-1, _DETECTION_COLUMNS) for frame in detections]
+    )
     counts = np.array([len(frame) for frame in detections], dtype=np.int64)
     descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
     try:

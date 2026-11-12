@@ -142,7 +142,7 @@ def test_input_detections_are_not_modified() -> None:
     scene = noisy_scene(seed=3)
     snapshot = [frame.copy() for frame in scene]
     run_tracker(scene, TrackerParams())
-    assert all(np.array_equal(a, b) for a, b in zip(scene, snapshot))
+    assert all(np.array_equal(a, b) for a, b in zip(scene, snapshot, strict=False))
 
 
 def test_custom_parameters_change_behaviour() -> None:

@@ -4,7 +4,7 @@ import platform
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -12,7 +12,7 @@ import torch
 
 from eval.detection_cache import CacheKey, detect_with_cache
 from eval.halves import HalfError, materialize_half
-from eval.scoring import ScoreReport, ScoringError, Scores, score_sequences
+from eval.scoring import ScoreReport, Scores, ScoringError, score_sequences
 from eval.split import split_sequence
 from eval.tuning import TuningError, TuningResult, TuningSequence, tune_parameters, write_params
 from tracking.bytetrack import run_tracker
@@ -219,7 +219,7 @@ def main(argv: Sequence[str] | None = None, dependencies: Dependencies | None = 
     config = BenchmarkConfig(
         data_root=arguments.data_root,
         results_root=arguments.results_root,
-        run_name=arguments.run_name or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
+        run_name=arguments.run_name or datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ"),
         precision=arguments.precision,
         weights=arguments.weights,
         device=arguments.device or ("cuda" if torch.cuda.is_available() else "cpu"),

@@ -106,7 +106,9 @@ def test_a_run_writes_the_params_results_and_summary(tmp_path: Path) -> None:
         assert set(scores) == {"hota", "mota", "idf1"}
 
 
-def test_the_markdown_table_lists_each_sequence_and_the_combined_row(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_the_markdown_table_lists_each_sequence_and_the_combined_row(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     harness = Harness(tmp_path)
     harness.run("first")
     table = (harness.results_root / "first" / "summary.md").read_text()

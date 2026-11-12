@@ -61,7 +61,13 @@ def layout(tmp_path: Path) -> StorageLayout:
     return StorageLayout(tmp_path / "storage")
 
 
-def _context(store: InMemoryJobStore, layout: StorageLayout, detector, owner: str = OWNER, time_limit_seconds: int | None = None) -> WorkerContext:  # type: ignore[no-untyped-def]
+def _context(  # type: ignore[no-untyped-def]
+    store: InMemoryJobStore,
+    layout: StorageLayout,
+    detector,
+    owner: str = OWNER,
+    time_limit_seconds: int | None = None,
+) -> WorkerContext:
     metadata = RunMetadata(TrackerParams(), WEIGHTS_ID, WEIGHTS_SHA256, "fp16")
     return WorkerContext(store, layout, detector, metadata, owner, LOCK_SECONDS, time_limit_seconds)
 

@@ -36,7 +36,9 @@ def skip_reason(probe: ClusterProbe) -> str | None:
     return None
 
 
-def kubectl(*arguments: str, check: bool = True, environ: Mapping[str, str] = os.environ) -> subprocess.CompletedProcess[str]:
+def kubectl(
+    *arguments: str, check: bool = True, environ: Mapping[str, str] = os.environ
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["kubectl", *arguments], capture_output=True, text=True, check=check, env=dict(environ))
 
 

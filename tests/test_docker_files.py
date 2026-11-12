@@ -73,6 +73,8 @@ def test_the_pinned_torch_versions_match_pyproject() -> None:
     assert all(requirement in text for requirement in pinned)
 
 
-@pytest.mark.parametrize("pattern", ["data/", "models/", ".git", "*.pth", ".env", "*.pem", "*.key", "tests/", "graphify-out/"])
+@pytest.mark.parametrize(
+    "pattern", ["data/", "models/", ".git", "*.pth", ".env", "*.pem", "*.key", "tests/", "graphify-out/"]
+)
 def test_dockerignore_excludes_sensitive_and_heavy_paths(pattern: str) -> None:
     assert pattern in _requirement_lines(ROOT / ".dockerignore")

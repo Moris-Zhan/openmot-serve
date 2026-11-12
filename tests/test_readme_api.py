@@ -21,7 +21,12 @@ def _served_endpoints() -> set[tuple[str, str]]:
     app = create_app(
         InMemoryJobStore(), StorageLayout(Path("/unused")), UploadLimits(1, 1), lambda job_id: None, lambda: None
     )
-    return {(method, route.path) for route in app.routes if hasattr(route, "methods") and route.path not in FRAMEWORK_PATHS for method in route.methods - {"HEAD"}}  # type: ignore[attr-defined]
+    return {
+        (method, route.path)
+        for route in app.routes
+        if hasattr(route, "methods") and route.path not in FRAMEWORK_PATHS
+        for method in route.methods - {"HEAD"}  # type: ignore[attr-defined]
+    }
 
 
 def test_every_served_endpoint_is_in_the_readme_table() -> None:
