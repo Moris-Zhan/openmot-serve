@@ -10,6 +10,9 @@ DEFAULT_MAX_UPLOAD_BYTES = 1 * 1024**3
 DEFAULT_MAX_UNPACKED_BYTES = 4 * 1024**3
 DEFAULT_LOCK_TIMEOUT_SECONDS = 1800
 DEFAULT_TASK_TIME_LIMIT_SECONDS = 1500
+DEFAULT_API_METRICS_PORT = 9101
+DEFAULT_WORKER_METRICS_PORT = 9102
+MAX_PORT = 65535
 _REDIS_SCHEMES = ("redis://", "rediss://", "unix://")
 
 
@@ -27,6 +30,8 @@ class Settings:
     max_unpacked_bytes: int
     lock_timeout_seconds: int
     task_time_limit_seconds: int
+    api_metrics_port: int = DEFAULT_API_METRICS_PORT
+    worker_metrics_port: int = DEFAULT_WORKER_METRICS_PORT
 
 
 def _text(environ: Mapping[str, str], name: str, default: str | None = None) -> str:
@@ -48,6 +53,13 @@ def _positive_int(environ: Mapping[str, str], name: str, default: int) -> int:
         raise SettingsError(f"{name} must be an integer, got {raw!r}") from error
     if value <= 0:
         raise SettingsError(f"{name} must be positive, got {value}")
+    return value
+
+
+def _port(environ: Mapping[str, str], name: str, default: int) -> int:
+    value = _positive_int(environ, name, default)
+    if value > MAX_PORT:
+        raise SettingsError(f"{name} must be at most {MAX_PORT}, got {value}")
     return value
 
 
@@ -98,4 +110,6 @@ def load_settings(environ: Mapping[str, str]) -> Settings:
         max_unpacked_bytes=max_unpacked_bytes,
         lock_timeout_seconds=lock_timeout_seconds,
         task_time_limit_seconds=task_time_limit_seconds,
+        api_metrics_port=_port(environ, "OPENMOT_API_METRICS_PORT", DEFAULT_API_METRICS_PORT),
+        worker_metrics_port=_port(environ, "OPENMOT_WORKER_METRICS_PORT", DEFAULT_WORKER_METRICS_PORT),
     )

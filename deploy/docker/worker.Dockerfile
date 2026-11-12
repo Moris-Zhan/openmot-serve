@@ -11,6 +11,7 @@ WORKDIR /build
 COPY pyproject.toml README.md LICENSE ./
 COPY tracking ./tracking
 COPY jobs ./jobs
+COPY metrics ./metrics
 COPY app ./app
 COPY worker ./worker
 RUN uv pip install --system ".[service]"

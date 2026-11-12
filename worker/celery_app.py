@@ -1,9 +1,12 @@
+import time
 from collections.abc import Callable
+from pathlib import Path
 
 from celery import Celery
 
 from jobs.settings import Settings
-from worker.processing import WorkerContext, process_job
+from metrics.definitions import Metrics
+from worker.processing import ProcessOutcome, WorkerContext, process_job
 
 TASK_NAME = "openmot.process_job"
 
@@ -32,7 +35,32 @@ def make_enqueue(app: Celery) -> Callable[[str], None]:
     return enqueue
 
 
-def register_task(app: Celery, context: WorkerContext) -> None:
+def _frame_count(frames_dir: Path) -> int:
+    if not frames_dir.is_dir():
+        return 0
+    return sum(1 for entry in frames_dir.iterdir() if entry.is_file())
+
+
+def _record_outcome(metrics: Metrics, outcome: ProcessOutcome, elapsed_seconds: float, frames: int) -> None:
+    metrics.jobs.labels(outcome=outcome.value).inc()
+    if outcome is not ProcessOutcome.SKIPPED:
+        metrics.job_duration.observe(elapsed_seconds)
+    if outcome is ProcessOutcome.SUCCEEDED:
+        metrics.frames_processed.inc(frames)
+
+
+def register_task(
+    app: Celery,
+    context: WorkerContext,
+    metrics: Metrics | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> None:
     @app.task(name=TASK_NAME, shared=False)
     def process(job_id: str) -> str:
-        return process_job(context, job_id).value
+        if metrics is None:
+            return process_job(context, job_id).value
+        frames = _frame_count(context.layout.frames_dir(job_id))
+        started = monotonic()
+        outcome = process_job(context, job_id)
+        _record_outcome(metrics, outcome, monotonic() - started, frames)
+        return outcome.value

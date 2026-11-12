@@ -25,10 +25,11 @@ service = [
   "python-multipart>=0.0.9",
   "celery>=5.4",
   "redis>=5",
+  "prometheus_client==0.21.1",
 ]
 
 [tool.setuptools.packages.find]
-include = ["tracking*", "eval*", "jobs*", "app*", "worker*"]
+include = ["tracking*", "eval*", "jobs*", "app*", "worker*", "metrics*"]
 
 [tool.uv.sources]
 torch = { index = "pytorch-cu128" }

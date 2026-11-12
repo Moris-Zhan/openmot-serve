@@ -9,6 +9,8 @@ from app.upload import UploadLimits, UploadRejected, UploadTooLarge, unpack_uplo
 from jobs.layout import StorageError, StorageLayout, new_job_id, publish_frames, remove_job, staged_frames
 from jobs.record import JobRecord, JobStatus, new_job
 from jobs.store import JobStore
+from metrics.definitions import Metrics
+from metrics.http import MetricsMiddleware
 
 Enqueue = Callable[[str], None]
 PingQueue = Callable[[], None]
@@ -93,8 +95,11 @@ def create_app(
     enqueue: Enqueue,
     ping_queue: PingQueue,
     clock: Callable[[], float] = time.time,
+    metrics: Metrics | None = None,
 ) -> FastAPI:
     app = FastAPI(title="openmot-serve")
+    if metrics is not None:
+        app.add_middleware(MetricsMiddleware, metrics=metrics)
 
     @app.post("/jobs", status_code=202)
     def submit_job(file: UploadFile) -> dict[str, str]:

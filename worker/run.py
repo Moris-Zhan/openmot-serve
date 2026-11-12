@@ -6,12 +6,17 @@ from collections.abc import Callable, Mapping
 
 import redis
 from celery import Celery
+from prometheus_client import CollectorRegistry
 
 from jobs.redis_store import RedisJobStore
 from jobs.settings import Settings, SettingsError, load_settings
 from jobs.store import JobStore
+from metrics.definitions import create_metrics
+from metrics.server import MetricsServer, start_metrics_server
 from worker.celery_app import create_celery, register_task
 from worker.startup import StartupDependencies, StartupError, start_worker
+
+MetricsStarter = Callable[[int, CollectorRegistry], MetricsServer | None]
 
 
 def _redis_store(settings: Settings) -> JobStore:
@@ -41,6 +46,7 @@ def main(
     environ: Mapping[str, str] = os.environ,
     dependencies: StartupDependencies | None = None,
     serve: Callable[[Celery], None] = _serve,
+    metrics_server: MetricsStarter | None = None,
 ) -> int:
     try:
         settings = load_settings(environ)
@@ -52,11 +58,16 @@ def main(
     except StartupError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
+    metrics = None
+    if metrics_server is not None:
+        registry = CollectorRegistry()
+        metrics = create_metrics(registry)
+        metrics_server(settings.worker_metrics_port, registry)
     app = create_celery(settings)
-    register_task(app, context)
+    register_task(app, context, metrics)
     serve(app)
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(metrics_server=start_metrics_server))
