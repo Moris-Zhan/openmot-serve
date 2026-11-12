@@ -135,6 +135,7 @@ def test_the_limits_section_names_what_was_verified_end_to_end() -> None:
     section = _limits_section()
     for verified in ("Prometheus 抓取 api", "請求指標", "佇列深度", "Grafana 自動載入", "不對主機"):
         assert verified in section, verified
+    assert "GitHub 託管 runner" in section and "promtool" in section
 
 
 def test_the_limits_section_names_every_unverified_part() -> None:
@@ -143,7 +144,7 @@ def test_the_limits_section_names_every_unverified_part() -> None:
     assert "未經真實流量校準" in section
     assert "Kubernetes" in section and "不在範圍" in section
     assert "Alertmanager" in section
-    assert "尚未在 GitHub" in section
+    assert "尚未在 GitHub" not in section
 
 
 def test_the_limits_section_does_not_hard_code_test_counts_or_timings() -> None:

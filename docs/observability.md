@@ -106,6 +106,7 @@ promtool test rules monitoring/rules/openmot.rules.test.yml
 
 - 單元測試與程序內測試：指標的名稱、標籤與 bucket；路由模板與 `unmatched`；`skipped` 不計耗時；Redis 失敗時佇列深度缺席；埠被占用時服務照常運作；設定值的檢查。
 - 警報規則：用 `promtool` 做單元測試，每條規則都有觸發與不觸發的案例，並以突變驗證確認測試真的會抓到門檻與最小量條件被改掉。
+- GitHub 託管 runner：這個分支的 CI 全部通過，`test` 工作安裝了 promtool（比對 SHA-256 後）並跑過警報規則的單元測試；`publish` 依設計被略過。
 - 在本機的 Docker 上疊加 overlay、啟動 Redis、api、Prometheus、Grafana（不含 worker）做端到端驗證，全部通過：Prometheus 抓取 api 的目標為 `up`、worker 的目標為 `down`；送出請求後請求指標依路由模板增加，且實際的 job ID 不在標籤裡；沒有 worker 時送出一個工作，佇列深度為 1；對外 API 埠的 `/metrics` 是 `404`，指標埠不對主機開放；五條警報規則都被 Prometheus 載入，`WorkerDown` 離開了 inactive 狀態；Grafana 自動載入資料來源與 dashboard，每個面板的查詢都被 Prometheus 接受。
 
 **未驗證，或不在範圍**
@@ -114,4 +115,3 @@ promtool test rules monitoring/rules/openmot.rules.test.yml
 - **數值未經真實流量校準**：警報門檻與 dashboard 都是在沒有真實流量的情況下設計與驗證的，面板上的數字沒有在真實的流量與工作量下檢視過。
 - **Kubernetes 的監控清單不在範圍內**：這個變更只提供 compose overlay，ServiceMonitor 與 monitoring namespace 沒有做。
 - **沒有 Alertmanager**：警報不會通知任何人。
-- **CI 的 promtool 步驟尚未在 GitHub 的 runner 上執行**：工作流程已通過語法檢查與結構測試，下載與校驗的指令在本機以相同的版本與校驗碼實際執行過，但還沒有在 GitHub 的託管 runner 上跑過。

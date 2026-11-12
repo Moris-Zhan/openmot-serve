@@ -39,7 +39,7 @@
 ## 7. 端到端驗證（observability）
 
 - [x] 7.1 在本機實際疊加 overlay 並驗證（以標記 `integration` 的測試實作，沒有 Docker 時 skip 並說明原因）：啟動 Redis、api、Prometheus、Grafana（不啟動 worker），確認 Prometheus 的 api 目標為 `up`、送請求後請求指標增加、不啟動 worker 時送出一個工作後佇列深度為 1、Grafana 在沒有手動操作下找得到 dashboard 與資料來源、每個面板的查詢都能被 Prometheus 的查詢 API 解析；記錄實際結果；若側車環境的埠無法從測試程序連到，改以容器內的指令查詢並如實記錄；worker 指標的端到端無法驗證，如實記錄為限制
-- [ ] 7.2 取得使用者同意後推送一個分支，用 `gh run watch` 確認 `test` 工作的 promtool 步驟與警報規則測試在真實 runner 上通過並記錄耗時；`gh` 未登入時改由使用者執行並貼回結果
+- [x] 7.2 取得使用者同意後推送一個分支，用 `gh run watch` 確認 `test` 工作的 promtool 步驟與警報規則測試在真實 runner 上通過並記錄耗時；`gh` 未登入時改由使用者執行並貼回結果
 
 ## 8. README 與收尾（observability）
 
