@@ -17,14 +17,14 @@
 ## 3. 驗證（continuous-integration）
 
 - [x] 3.1 在乾淨的虛擬環境用與工作流程相同的指令（CPU 版 PyTorch、`pip install -e ".[dev,service]"`、`ruff check .`、預設測試）完整重現，記錄通過的測試數與耗時，並確認 Kubernetes 清單測試沒有被 skip
-- [ ] 3.2 取得使用者同意後推送一個分支，用 `gh run watch` 觀察 `lint`、`test`、`build-api` 在真實 runner 上的結果並記錄耗時；再推送一個含刻意 lint 違規的分支，驗證 `lint` 失敗、`publish` 不執行；`gh` 未登入時改由使用者執行並貼回結果
+- [x] 3.2 取得使用者同意後推送一個分支，用 `gh run watch` 觀察 `lint`、`test`、`build-api` 在真實 runner 上的結果並記錄耗時；再推送一個含刻意 lint 違規的分支，驗證 `lint` 失敗、`publish` 不執行；`gh` 未登入時改由使用者執行並貼回結果
 - [ ] 3.3 取得使用者同意後（會在其 GitHub 帳號建立 GHCR 套件並推送約 11 GB）推送到 `main`，驗證 `publish` 成功、兩個映像以 SHA 與 `main` 標籤出現在 GHCR，並記錄 worker 建置的耗時與磁碟使用；失敗時記錄原因而不重試其他方式
 
 ## 4. 文件與收尾（continuous-integration）
 
-- [ ] 4.1 新增 `docs/ci.md`（繁體中文）：工作流程各工作的用途與觸發、在本機重現 lint、測試與 api 映像建置的指令、映像名稱與取得方式、GHCR 權限、常見失敗與對策、GPU 測試不在 CI 內的說明；驗證文件中的指令照字面執行得到與 CI 相同的結果，文件中的工作名稱與工作流程一致（測試）
-- [ ] 4.2 更新 README：路線圖 v0.4 的 CI 項目如實勾選（3.2、3.3 未完成時如實標示）、Status 反映 v0.4 進度、加上 CI 狀態說明；驗證 README 的說法與工作流程一致
-- [ ] 4.3 執行預設的完整測試（不含 `gpu`、`data`、`integration`）、`ruff check .` 與 `openspec validate add-ci-pipeline --strict`；驗證三者皆通過
+- [x] 4.1 新增 `docs/ci.md`（繁體中文）：工作流程各工作的用途與觸發、在本機重現 lint、測試與 api 映像建置的指令、映像名稱與取得方式、GHCR 權限、常見失敗與對策、GPU 測試不在 CI 內的說明；驗證文件中的指令照字面執行得到與 CI 相同的結果，文件中的工作名稱與工作流程一致（測試）
+- [x] 4.2 更新 README：路線圖 v0.4 的 CI 項目如實勾選（3.2、3.3 未完成時如實標示）、Status 反映 v0.4 進度、加上 CI 狀態說明；驗證 README 的說法與工作流程一致
+- [x] 4.3 執行預設的完整測試（不含 `gpu`、`data`、`integration`）、`ruff check .` 與 `openspec validate add-ci-pipeline --strict`；驗證三者皆通過
 
 ## Workflow follow-up
 
