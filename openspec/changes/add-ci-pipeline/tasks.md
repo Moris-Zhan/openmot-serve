@@ -18,7 +18,7 @@
 
 - [x] 3.1 在乾淨的虛擬環境用與工作流程相同的指令（CPU 版 PyTorch、`pip install -e ".[dev,service]"`、`ruff check .`、預設測試）完整重現，記錄通過的測試數與耗時，並確認 Kubernetes 清單測試沒有被 skip
 - [x] 3.2 取得使用者同意後推送一個分支，用 `gh run watch` 觀察 `lint`、`test`、`build-api` 在真實 runner 上的結果並記錄耗時；再推送一個含刻意 lint 違規的分支，驗證 `lint` 失敗、`publish` 不執行；`gh` 未登入時改由使用者執行並貼回結果
-- [ ] 3.3 取得使用者同意後（會在其 GitHub 帳號建立 GHCR 套件並推送約 11 GB）推送到 `main`，驗證 `publish` 成功、兩個映像以 SHA 與 `main` 標籤出現在 GHCR，並記錄 worker 建置的耗時與磁碟使用；失敗時記錄原因而不重試其他方式
+- [x] 3.3 取得使用者同意後（會在其 GitHub 帳號建立 GHCR 套件並推送約 11 GB）推送到 `main`，驗證 `publish` 成功、兩個映像以 SHA 與 `main` 標籤出現在 GHCR，並記錄 worker 建置的耗時與磁碟使用；失敗時記錄原因而不重試其他方式
 
 ## 4. 文件與收尾（continuous-integration）
 

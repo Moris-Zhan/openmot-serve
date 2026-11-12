@@ -19,7 +19,7 @@ def _item(fragment: str) -> bool:
     return matches[0]
 
 
-def test_the_status_headline_reports_v0_4_ci_in_progress_and_keeps_the_v0_3_caveat() -> None:
+def test_the_status_headline_reports_v0_4_ci_done_and_keeps_the_v0_3_caveat() -> None:
     headline = README.split("> **Status:")[1].split("\n")[0].split("**")[0]
     assert "v0.4" in headline and "CI" in headline
     assert "v0.3" in headline and "not yet verified" in headline
@@ -31,9 +31,9 @@ def test_the_status_links_the_ci_guide_and_keeps_observability_planned() -> None
     assert "observability" in status_line.lower() and "planned" in status_line
 
 
-def test_the_ci_item_is_ticked_and_publishing_stays_open_until_it_has_run_on_main() -> None:
+def test_the_ci_and_publish_items_are_ticked_and_observability_stays_open() -> None:
     assert _item("GitHub Actions")
-    assert not _item("Publish the api and worker images")
+    assert _item("Publish the api and worker images")
     assert not _item("Prometheus metrics")
 
 

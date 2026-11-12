@@ -53,8 +53,9 @@ def test_the_guide_points_to_the_tool_versions_and_says_gpu_tests_are_not_run() 
     assert "不在 CI" in GUIDE
 
 
-def test_the_guide_is_honest_that_publishing_from_main_has_not_run_yet() -> None:
-    assert "尚未在 `main` 上實際執行" in GUIDE
+def test_the_guide_reports_the_first_publish_run_and_what_was_not_verified() -> None:
+    assert "已在 `main` 上實際執行並成功" in GUIDE
+    assert "尚未從 GHCR 實際拉取映像驗證" in GUIDE
 
 
 def test_the_guide_records_the_kubectl_mismatch_the_first_real_run_found() -> None:

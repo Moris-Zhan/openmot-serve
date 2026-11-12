@@ -2,7 +2,7 @@
 
 本文說明 `.github/workflows/ci.yml` 的行為，以及如何在本機重現每一項檢查。
 
-**驗證狀態**：`lint`、`test`、`build-api` 已在 GitHub 託管 runner 上實際執行並通過；故意加入 lint 違規的分支會讓 `lint` 失敗且 `publish` 不執行。`publish` 尚未在 `main` 上實際執行，所以映像是否能成功推送到 GHCR 還沒有證據。
+**驗證狀態**：`lint`、`test`、`build-api` 已在 GitHub 託管 runner 上實際執行並通過；故意加入 lint 違規的分支會讓 `lint` 失敗且 `publish` 不執行。`publish` 已在 `main` 上實際執行並成功（run 43142361313，總耗時 5 分 50 秒），日誌顯示 api 與 worker 映像都以 commit SHA 與 `main` 標籤推送了 manifest；尚未從 GHCR 實際拉取映像驗證。
 
 ## 工作流程
 
@@ -54,7 +54,7 @@ echo "$GHCR_TOKEN" | docker login ghcr.io -u <使用者名稱> --password-stdin
 docker pull ghcr.io/<owner>/openmot-api:main
 ```
 
-worker 映像約 11 GB。為了在託管 runner 上有足夠的磁碟，`publish` 會先刪除用不到的預裝套件，worker 不使用建置快取。這個工作尚未在 `main` 上實際執行，磁碟與耗時的實際數字要等第一次發佈後才知道。
+worker 映像約 11 GB。為了在託管 runner 上有足夠的磁碟，`publish` 會先刪除用不到的預裝套件，worker 不使用建置快取。第一次在 `main` 上的實際數字：清理磁碟後約 104 GB 可用；api 映像約 13 秒；worker 映像建置與推送約 3 分 53 秒（不使用快取），沒有遇到磁碟或逾時問題。
 
 ## 權限
 
