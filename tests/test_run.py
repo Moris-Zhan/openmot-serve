@@ -164,6 +164,7 @@ def test_the_summary_matches_the_settings_actually_used(tmp_path: Path, precisio
     assert summary["weights"] == {"id": WEIGHTS_ID, "sha256": WEIGHTS_SHA256}
     assert summary["precision"] == precision == harness.loaded_with[0][0]
     assert summary["detector"]["precision"] == precision
+    assert summary["backend"] == "torch" == summary["detector"]["backend"]
     assert summary["tracker_params"] == json.loads((run_dir / "params.json").read_text())
     assert summary["gpu"] == "Test GPU 9000"
     assert summary["software"] == {

@@ -41,6 +41,11 @@ def test_key_is_built_from_the_detector_settings_and_weights_hash() -> None:
     key = CacheKey.from_settings(settings, SHA)
     assert (key.weights_sha256, key.input_height, key.input_width) == (SHA, 640, 1152)
     assert (key.precision, key.nms_threshold, key.confidence_floor) == ("fp32", 0.5, 0.1)
+    assert key.backend == "torch"
+
+
+def test_keys_that_differ_only_in_backend_have_different_digests() -> None:
+    assert _key().digest() != _key(backend="onnx").digest()
 
 
 def test_second_call_with_the_same_key_hits_and_runs_no_detection(tmp_path: Path) -> None:
@@ -75,6 +80,7 @@ def test_cached_detections_are_bit_exact_including_empty_frames(tmp_path: Path) 
         {"precision": "fp32"},
         {"nms_threshold": 0.5},
         {"confidence_floor": 0.2},
+        {"backend": "onnx"},
     ],
     ids=lambda changes: next(iter(changes)),
 )

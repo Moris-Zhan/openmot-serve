@@ -128,3 +128,13 @@ def test_detect_finds_the_labelled_pedestrians_in_a_real_frame() -> None:
         overlap = np.clip(bottom_right - top_left, 0, None).prod(axis=1)
         union = (detections[:, 2] - detections[:, 0]) * (detections[:, 3] - detections[:, 1]) + width * height - overlap
         assert (overlap / union).max() > 0.7
+
+
+def test_the_default_backend_is_torch() -> None:
+    assert DetectorSettings().backend == "torch"
+
+
+def test_an_unsupported_backend_is_rejected_with_the_supported_list() -> None:
+    with pytest.raises(ValueError, match=r"unsupported backend 'tensorrt'.*torch"):
+        DetectorSettings(backend="tensorrt")
+

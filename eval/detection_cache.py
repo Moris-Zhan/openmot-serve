@@ -24,6 +24,7 @@ class CacheKey:
     precision: str
     nms_threshold: float
     confidence_floor: float
+    backend: str
 
     @classmethod
     def from_settings(cls, settings: DetectorSettings, weights_sha256: str) -> "CacheKey":
@@ -34,6 +35,7 @@ class CacheKey:
             precision=settings.precision,
             nms_threshold=settings.nms_threshold,
             confidence_floor=settings.confidence_floor,
+            backend=settings.backend,
         )
 
     def canonical(self) -> str:

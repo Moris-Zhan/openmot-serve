@@ -139,6 +139,7 @@ def _summary_document(
     environment = outcome.report
     return {
         "weights": {"id": WEIGHTS_ID, "sha256": WEIGHTS_SHA256},
+        "backend": settings.backend,
         "precision": settings.precision,
         "detector": asdict(settings),
         "tracker_params": asdict(tuning.best),

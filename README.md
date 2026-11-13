@@ -164,6 +164,7 @@ COCO 預訓練權重，未針對 MOT17 微調；數字不可與 ByteTrack 論文
 - [ ] Kubernetes monitoring manifests (ServiceMonitor, monitoring namespace)
 
 ### v0.5 — Inference optimization
+- [x] Latency and throughput baseline for the detector (`python -m eval.latency`; PyTorch FP16 on an RTX 5090: 11.2 ms inference, 18.3 ms end to end, about 55 FPS — see [`docs/evaluation.md`](docs/evaluation.md))
 - [ ] Export the detector to ONNX / TensorRT
 - [ ] INT8 quantization with calibration
 - [ ] Before/after comparison of latency, throughput and HOTA

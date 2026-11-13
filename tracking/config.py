@@ -7,6 +7,7 @@ from tracking.bytetrack import TrackerParams
 from tracking.files import write_text_atomic
 
 SUPPORTED_PRECISIONS = ("fp16", "fp32")
+SUPPORTED_BACKENDS = ("torch",)
 _FLOAT_KEYS = ("detection_threshold", "match_threshold")
 _INT_KEYS = ("track_buffer",)
 
