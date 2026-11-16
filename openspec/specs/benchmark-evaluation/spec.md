@@ -4,6 +4,7 @@
 以固定、可重現且不洩漏答案的方式，在 MOT17 上量測整條追蹤管線的品質，產出 HOTA、MOTA、IDF1，作為本專案所有後續優化（例如 INT8 量化）的比較基準。
 
 ## Requirements
+
 ### Requirement: Each training Sequence is split into two non-overlapping halves
 系統 SHALL 將每個 MOT17 訓練 Sequence 切成 Tuning Half 與 Validation Half：長度為 N 的 Sequence，Tuning Half 為第 1 到 floor(N/2) 個 Frame，Validation Half 為其餘的 Frame。兩者不得重疊，且合起來涵蓋所有 Frame。
 
@@ -56,7 +57,7 @@
 - **THEN** 指令以非 0 的結束碼結束，並提示使用 `data/download_mot.sh` 取得資料
 
 ### Requirement: The score summary records how it was produced
-分數摘要 SHALL 記錄偵測模型權重的識別資訊、推論精度（例如 FP16）、最終追蹤參數、軟體版本與 GPU 型號，使不同次的結果可以被公平比較。
+分數摘要 SHALL 記錄偵測模型權重的識別資訊、推論後端、推論精度（例如 FP16）、最終追蹤參數、軟體版本與 GPU 型號，使不同次的結果可以被公平比較。
 
 #### Scenario: Summary metadata
 - **WHEN** 一次 Benchmark Run 完成
@@ -68,3 +69,14 @@ Benchmark Run 產生的切分資料與結果 SHALL 寫入被版本控制忽略�
 #### Scenario: Running a benchmark twice
 - **WHEN** 使用者連續執行兩次 Benchmark Run
 - **THEN** 原始 MOT17 資料保持不變，且 `git status` 不出現任何新的未追蹤資料檔
+
+### Requirement: Cached detections are never shared between inference backends
+偵測快取 SHALL 將推論後端納入其識別依據：以不同後端產生的偵測結果 SHALL NOT 互相沿用，即使其他設定（權重、精度、輸入尺寸、門檻）完全相同。
+
+#### Scenario: Same settings, different backend
+- **WHEN** 兩次執行除了推論後端之外的設定都相同
+- **THEN** 第二次執行不使用第一次的快取，而是重新偵測
+
+#### Scenario: Same settings, same backend
+- **WHEN** 兩次執行的所有設定（含推論後端）都相同
+- **THEN** 第二次執行直接使用快取，不重新偵測
