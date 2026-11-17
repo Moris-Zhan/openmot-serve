@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -37,21 +38,22 @@ def _write_frames(directory: Path, count: int = 12) -> None:
         cv2.imwrite(str(directory / f"{index + 1:06d}.png"), _white_box_frame(index))
 
 
-def _command_line_run(frames: Path, output: Path) -> None:
+def _command_line_run(frames: Path, output: Path, backend: str = "torch") -> None:
     def loader(
         weights: object, precision: object, device: object, backend: object = "torch", engine: object = None
     ) -> Callable:
         return _detect_white_boxes
 
-    assert main([str(frames), "--output", str(output)], load_detect_frame=loader) == 0
+    arguments = [str(frames), "--output", str(output), "--backend", backend]
+    assert main(arguments, load_detect_frame=loader) == 0
 
 
-def _service_run(frames: Path, layout: StorageLayout, job_id: str) -> None:
+def _service_run(frames: Path, layout: StorageLayout, job_id: str, backend: str = "torch") -> None:
     layout.job_dir(job_id).mkdir(parents=True)
     frames.rename(layout.frames_dir(job_id))
     store = InMemoryJobStore()
     store.create(new_job(job_id, now=1.0))
-    metadata = RunMetadata(TrackerParams(), WEIGHTS_ID, WEIGHTS_SHA256, "fp16")
+    metadata = RunMetadata(TrackerParams(), WEIGHTS_ID, WEIGHTS_SHA256, "fp16", backend)
     context = WorkerContext(store, layout, _detect_white_boxes, metadata, "worker-a", 60)
     assert process_job(context, job_id) is ProcessOutcome.SUCCEEDED
     record = store.get(job_id)
@@ -86,3 +88,20 @@ def test_the_result_has_several_tracks_so_the_comparison_means_something(tmp_pat
 
 def test_the_service_default_tracker_parameters_are_the_command_line_defaults() -> None:
     assert load_tracker_params(None) == TrackerParams()
+
+
+def test_the_service_and_the_command_line_agree_for_the_tensorrt_backend(tmp_path: Path) -> None:
+    command_frames = tmp_path / "cli-frames"
+    service_frames = tmp_path / "service-frames"
+    _write_frames(command_frames)
+    _write_frames(service_frames)
+    command_output = tmp_path / "cli-out" / "result.txt"
+    layout = StorageLayout(tmp_path / "storage")
+
+    _command_line_run(command_frames, command_output, "tensorrt")
+    _service_run(service_frames, layout, "job-1", "tensorrt")
+
+    service_metadata = metadata_path_for(layout.result_path("job-1")).read_bytes()
+    assert layout.result_path("job-1").read_bytes() == command_output.read_bytes()
+    assert service_metadata == metadata_path_for(command_output).read_bytes()
+    assert json.loads(service_metadata)["backend"] == "tensorrt"

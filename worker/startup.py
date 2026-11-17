@@ -39,7 +39,9 @@ def start_worker(settings: Settings, dependencies: StartupDependencies, owner: s
         store=dependencies.make_store(settings),
         layout=StorageLayout(settings.storage_dir),
         detect_frame=detect_frame,
-        metadata=RunMetadata(TrackerParams(), WEIGHTS_ID, WEIGHTS_SHA256, settings.precision),
+        metadata=RunMetadata(
+            TrackerParams(), WEIGHTS_ID, WEIGHTS_SHA256, settings.precision, settings.backend
+        ),
         owner=owner,
         lock_timeout_seconds=settings.lock_timeout_seconds,
         time_limit_seconds=settings.task_time_limit_seconds,

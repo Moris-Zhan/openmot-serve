@@ -124,7 +124,12 @@ def resolve_backend_artifact(
 ) -> ArtifactInfo | None:
     if backend == "torch":
         return None
-    return resolve_artifact(backend, settings, observe(backend, weights), directory, engine)
+    observed = observe(backend, weights)
+    if backend == "tensorrt" and observed.tensorrt_version is None:
+        raise BackendError(
+            f"the {_PACKAGE_BY_MODULE['tensorrt']} package is not installed; install it with: {_INSTALL_HINT}"
+        )
+    return resolve_artifact(backend, settings, observed, directory, engine)
 
 
 def describe_artifact(

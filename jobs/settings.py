@@ -2,7 +2,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from tracking.config import SUPPORTED_PRECISIONS
+from tracking.config import SUPPORTED_BACKENDS, SUPPORTED_PRECISIONS, SUPPORTED_PRECISIONS_BY_BACKEND
 
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 DEFAULT_WEIGHTS = Path("models/yolox_x.pth")
@@ -32,6 +32,8 @@ class Settings:
     task_time_limit_seconds: int
     api_metrics_port: int = DEFAULT_API_METRICS_PORT
     worker_metrics_port: int = DEFAULT_WORKER_METRICS_PORT
+    backend: str = "torch"
+    engine: Path | None = None
 
 
 def _text(environ: Mapping[str, str], name: str, default: str | None = None) -> str:
@@ -84,6 +86,33 @@ def _precision(environ: Mapping[str, str]) -> str:
     return precision
 
 
+def _backend(environ: Mapping[str, str], precision: str) -> str:
+    backend = _text(environ, "OPENMOT_BACKEND", "torch")
+    if backend not in SUPPORTED_BACKENDS:
+        raise SettingsError(f"OPENMOT_BACKEND must be one of {SUPPORTED_BACKENDS}, got {backend!r}")
+    supported = SUPPORTED_PRECISIONS_BY_BACKEND[backend]
+    if precision not in supported:
+        raise SettingsError(
+            f"OPENMOT_BACKEND {backend!r} does not support OPENMOT_PRECISION {precision!r}, "
+            f"it supports {supported}"
+        )
+    return backend
+
+
+def _engine(environ: Mapping[str, str], backend: str) -> Path | None:
+    if "OPENMOT_ENGINE" not in environ:
+        return None
+    path = Path(_text(environ, "OPENMOT_ENGINE"))
+    if not path.is_absolute():
+        raise SettingsError(f"OPENMOT_ENGINE must be an absolute path, got {str(path)!r}")
+    if backend == "torch":
+        raise SettingsError(
+            "OPENMOT_ENGINE only applies to the onnx and tensorrt backends, "
+            "but OPENMOT_BACKEND is 'torch'"
+        )
+    return path
+
+
 def load_settings(environ: Mapping[str, str]) -> Settings:
     max_upload_bytes = _positive_int(environ, "OPENMOT_MAX_UPLOAD_BYTES", DEFAULT_MAX_UPLOAD_BYTES)
     max_unpacked_bytes = _positive_int(environ, "OPENMOT_MAX_UNPACKED_BYTES", DEFAULT_MAX_UNPACKED_BYTES)
@@ -101,11 +130,15 @@ def load_settings(environ: Mapping[str, str]) -> Settings:
             f"OPENMOT_TASK_TIME_LIMIT_SECONDS ({task_time_limit_seconds}) must be below "
             f"OPENMOT_LOCK_TIMEOUT_SECONDS ({lock_timeout_seconds})"
         )
+    precision = _precision(environ)
+    backend = _backend(environ, precision)
     return Settings(
         storage_dir=_storage_dir(environ),
         redis_url=_redis_url(environ),
         weights=Path(_text(environ, "OPENMOT_WEIGHTS", str(DEFAULT_WEIGHTS))),
-        precision=_precision(environ),
+        precision=precision,
+        backend=backend,
+        engine=_engine(environ, backend),
         max_upload_bytes=max_upload_bytes,
         max_unpacked_bytes=max_unpacked_bytes,
         lock_timeout_seconds=lock_timeout_seconds,

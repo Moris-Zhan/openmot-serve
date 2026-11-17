@@ -27,11 +27,16 @@ class RunMetadata:
     weights_id: str
     weights_sha256: str
     precision: str
+    backend: str = "torch"
 
     def __post_init__(self) -> None:
         if self.precision not in SUPPORTED_PRECISIONS:
             raise ValueError(
                 f"unsupported precision {self.precision!r}, expected one of {SUPPORTED_PRECISIONS}"
+            )
+        if self.backend not in SUPPORTED_BACKENDS:
+            raise ValueError(
+                f"unsupported backend {self.backend!r}, expected one of {SUPPORTED_BACKENDS}"
             )
 
 
@@ -80,7 +85,7 @@ def metadata_path_for(result_path: Path) -> Path:
 
 
 def _metadata_document(metadata: RunMetadata) -> dict[str, object]:
-    return {
+    document: dict[str, object] = {
         "tracker": {
             "detection_threshold": metadata.tracker.detection_threshold,
             "match_threshold": metadata.tracker.match_threshold,
@@ -89,6 +94,9 @@ def _metadata_document(metadata: RunMetadata) -> dict[str, object]:
         "weights": {"id": metadata.weights_id, "sha256": metadata.weights_sha256},
         "precision": metadata.precision,
     }
+    if metadata.backend != "torch":
+        document["backend"] = metadata.backend
+    return document
 
 
 def write_metadata(path: Path, metadata: RunMetadata) -> None:

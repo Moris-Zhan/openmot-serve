@@ -272,12 +272,64 @@ compose 已替 api 與 worker 設好儲存目錄、Redis 位址與權重路徑�
 | `OPENMOT_REDIS_URL` | compose 設為 `redis://redis:6379/0` | api、worker | Job Status 與佇列所在的 Redis |
 | `OPENMOT_WEIGHTS` | compose 設為 `/models/yolox_x.pth` | worker | 權重路徑，載入時驗證 SHA-256 |
 | `OPENMOT_PRECISION` | `fp16` | worker | 推論精度，`fp16` 或 `fp32` |
+| `OPENMOT_BACKEND` | `torch` | worker | 偵測後端：`torch`、`onnx` 或 `tensorrt`；與 `OPENMOT_PRECISION` 的組合要合法（`onnx` 只支援 `fp32`，`tensorrt` 只支援 `fp16`），不會由後端推斷精度 |
+| `OPENMOT_ENGINE` | 未設定 | worker | `onnx` 或 `tensorrt` 後端使用的 ONNX／engine 檔的絕對路徑；和 `torch` 後端同時設定會啟動失敗 |
 | `OPENMOT_MAX_UPLOAD_BYTES` | 1 GiB | api | 上傳 zip 的大小上限 |
 | `OPENMOT_MAX_UNPACKED_BYTES` | 4 GiB | api | 解壓後總量上限，不可小於上傳上限 |
 | `OPENMOT_LOCK_TIMEOUT_SECONDS` | 1800 | worker | Job 鎖逾時，同時是訊息重新投遞的等待時間 |
 | `OPENMOT_TASK_TIME_LIMIT_SECONDS` | 1500 | worker | 單一 Job 的時間上限，必須小於鎖逾時 |
 
 Compose 層級的變數：`OPENMOT_API_PORT`（對外埠，預設 8000）、`OPENMOT_WEIGHTS_FILE`（主機上的權重路徑）。
+
+### TensorRT worker
+
+預設的 worker 以 PyTorch 偵測。要改用 TensorRT engine，使用 `docker-compose.tensorrt.yml` 與映像的 `tensorrt` build target（多裝固定版本的 `onnx`、`onnxruntime-gpu`、`tensorrt-cu12` 與匯出、建置 engine 的指令）。ONNX 與 engine 不會進映像，放在具名卷 `openmot-engines`，由 worker 以唯讀掛載。
+
+1. 建立兩個卷（權重卷的建立方式見上面的「權重放置」）：
+
+   ```bash
+   docker volume create openmot-weights   # 若已建立並放入 yolox_x.pth 就略過
+   docker volume create openmot-engines
+   ```
+
+2. 用同一個映像的 `engine-builder` 匯出 ONNX 並建立 engine，TensorRT 版本與之後執行時一致。`docker-compose.tensorrt.yml` 在載入時就要求 `OPENMOT_ENGINE_FILE`，所以建置階段先給任意占位值：
+
+   ```bash
+   export STACK="-f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.weights-volume.yml -f deploy/docker/docker-compose.tensorrt.yml"
+   export OPENMOT_ENGINE_FILE=pending
+   docker compose $STACK --profile tools run --rm engine-builder -m inference.export_onnx --weights /models/yolox_x.pth --output-dir /models/engines
+   docker compose $STACK --profile tools run --rm engine-builder -m inference.build_engine --weights /models/yolox_x.pth --output-dir /models/engines
+   docker compose $STACK --profile tools run --rm --entrypoint ls engine-builder /models/engines
+   ```
+
+   最後一行列出卷內的檔案；`*.engine` 的檔名含權重雜湊、輸入尺寸、TensorRT 版本、GPU 型號與精度，例如 `yolox_x-5652330b-800x1440-trt10.13.3.9-nvidia-geforce-rtx-5090-fp16.engine`。
+
+3. 以該檔名設定 `OPENMOT_ENGINE_FILE` 並啟動：
+
+   ```bash
+   export OPENMOT_ENGINE_FILE=<上一步列出的 .engine 檔名>
+   docker compose $STACK up -d --build
+   ```
+
+   沒有設定 `OPENMOT_ENGINE_FILE` 時，compose 會以訊息 `set OPENMOT_ENGINE_FILE to the engine file name inside the engines volume` 拒絕載入。要使用不同名稱的卷，設定 `OPENMOT_ENGINES_VOLUME`。同一個檢查也適用於 `logs`、`down` 等其他 compose 指令，所以上面用 `export` 讓整個 shell 都有這個變數。
+
+4. 確認：worker 載入成功後會在標準輸出印一行偵測器設定，只有後端、精度與（有產物時的）路徑，不含檔案內容：
+
+   ```text
+   detector: backend=tensorrt precision=fp16 engine=/models/engines/<engine 檔名>
+   ```
+
+   用 `docker compose $STACK logs worker` 查看；預設的 `torch` 後端印 `detector: backend=torch precision=fp16`，沒有路徑。Job 的 `result.meta.json` 在非 `torch` 後端時多一個 `"backend": "tensorrt"`，`torch` 的內容與以前逐位元組相同。
+
+何時要重建 engine：權重檔、TensorRT 版本（升級映像）或 GPU 型號改變時。worker 載入時會比對 engine 旁邊的 sidecar，不符就啟動失敗並指名不符的項目與重建指令，不會處理任何 Job。
+
+限制（如實說明）：
+
+- engine 綁定 GPU 型號與 TensorRT 版本，換機器或升級映像後要重建。
+- `onnx` 後端只用於驗證與比較，比 PyTorch 慢（實測約 21.8 FPS 對 55 FPS），不是部署選項。
+- Kubernetes 沒有 TensorRT 映像：k8s 的 ConfigMap 固定 `OPENMOT_BACKEND=torch`，TensorRT 目前只在 compose 提供。k8s 的 api 與 worker 共用同一份 ConfigMap，所以那裡的錯誤後端設定會讓兩者都啟動失敗；compose 的環境變數是逐服務設定，`OPENMOT_BACKEND` 只加在 worker。
+- CI 不建置 `tensorrt` target（託管 runner 沒有 GPU，建置要下載數 GB 的套件且無法執行），CI 只跑 Dockerfile 與 compose 的結構測試；建置與端對端只在有 GPU 的機器驗證。
+- 在預設映像設 `OPENMOT_BACKEND=tensorrt` 會在啟動時失敗並指出缺少 `tensorrt-cu12` 與安裝方式，不是在設定階段被擋下。
 
 ### 卷與資料保存
 
@@ -311,3 +363,16 @@ python -m pytest -m integration tests/test_compose_e2e.py
 ```
 
 daemon 看不到本機路徑時，用 `OPENMOT_E2E_COMPOSE_OVERRIDE=deploy/docker/docker-compose.weights-volume.yml` 指定上面的 volume 版 override。
+
+TensorRT worker 另有 `gpu` 與 `integration` 標記的端對端測試，缺 Docker、nvidia runtime、`openmot-weights` 卷或 MOT17 影格時會 skip：
+
+```shell
+python -m pytest -m "integration or gpu" tests/test_tensorrt_worker_e2e.py -s
+```
+
+它全程使用獨立名稱（compose 專案 `openmot-trt-e2e`、卷 `openmot-trt-e2e-engines`、`openmot-trt-e2e-frames`），`openmot-weights` 只以唯讀使用，結束後只清除這些名稱的資源，不動 `openmot` 專案的容器、卷與映像；設 `OPENMOT_TRT_E2E_KEEP_ENGINES=1` 可保留 engine 卷以省下重建時間。實測結果（RTX 5090、TensorRT 10.13.3.9、MOT17-09 前 60 張影格）：
+
+- 同一個 engine 以命令列連續執行 3 次，Result 與中繼檔逐位元組相同，所以下面的比對可以用逐位元組相同的措辭；這只代表同一機器、同一 engine 的 3 次量測，不保證重建 engine 後仍相同。
+- TensorRT worker 處理該 Job 從提交到 `succeeded` 約 2.3 秒；它的 Result 與中繼檔和同一映像、同一 engine 的 `python -m tracking.run --backend tensorrt --engine …` 逐位元組相同，中繼檔含 `"backend": "tensorrt"`。
+- `OPENMOT_ENGINE_FILE` 指向不存在的檔案時 worker 啟動失敗，錯誤訊息指名該檔案。
+- 在預設映像設 `OPENMOT_BACKEND=tensorrt` 時 worker 以結束碼 1 退出，訊息指出缺少 `tensorrt-cu12` 與 `pip install "openmot-serve[export]"`。這項測試曾揭露舊訊息誤報成「tensorrt_version mismatch，請重建」，已在 `inference/backends.py` 修正。

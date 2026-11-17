@@ -3,6 +3,7 @@ import socket
 import sys
 import uuid
 from collections.abc import Callable, Mapping
+from functools import partial
 
 import redis
 from celery import Celery
@@ -23,15 +24,22 @@ def _redis_store(settings: Settings) -> JobStore:
     return RedisJobStore(redis.Redis.from_url(settings.redis_url, decode_responses=True))
 
 
-def default_dependencies() -> StartupDependencies:
+def default_dependencies(settings: Settings) -> StartupDependencies:
     from tracking.env_check import EnvProbe, read_torch_report, run_env_check, torch_gpu_matches_cpu
     from tracking.run import load_default_detect_frame
 
     return StartupDependencies(
         check_environment=lambda: run_env_check(EnvProbe(read_torch_report, torch_gpu_matches_cpu)),
-        load_detect_frame=load_default_detect_frame,
+        load_detect_frame=partial(
+            load_default_detect_frame, backend=settings.backend, engine=settings.engine
+        ),
         make_store=_redis_store,
     )
+
+
+def detector_log_line(settings: Settings) -> str:
+    line = f"detector: backend={settings.backend} precision={settings.precision}"
+    return line if settings.engine is None else f"{line} engine={settings.engine}"
 
 
 def _serve(app: Celery) -> None:
@@ -54,10 +62,11 @@ def main(
         print(f"error: {error}", file=sys.stderr)
         return 2
     try:
-        context = start_worker(settings, dependencies or default_dependencies(), _owner_id())
+        context = start_worker(settings, dependencies or default_dependencies(settings), _owner_id())
     except StartupError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
+    print(detector_log_line(settings), flush=True)
     metrics = None
     if metrics_server is not None:
         registry = CollectorRegistry()

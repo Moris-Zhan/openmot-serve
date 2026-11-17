@@ -134,12 +134,13 @@ curl -s -o /dev/null -w '%{http_code}\n' http://<節點 IP>:30080/health
 | `OPENMOT_REDIS_URL` | `redis://redis:6379/0` | 佇列與 Job 狀態；`redis` 是同 Namespace 的 headless Service |
 | `OPENMOT_WEIGHTS` | `/models/yolox_x.pth` | worker 內的權重路徑，需與 volumeMount 一致 |
 | `OPENMOT_PRECISION` | `fp16` | 偵測精度 |
+| `OPENMOT_BACKEND` | `torch` | 偵測後端；k8s 目前只有預設映像（PyTorch），沒有 TensorRT 映像，設成 `tensorrt` 或 `onnx` 會使 worker 啟動失敗；TensorRT 只在 compose 提供，見 `docs/service.md` |
 | `OPENMOT_MAX_UPLOAD_BYTES` | `1073741824` | 單次上傳大小上限（1 GiB） |
 | `OPENMOT_MAX_UNPACKED_BYTES` | `4294967296` | 解壓後大小上限（4 GiB） |
 | `OPENMOT_LOCK_TIMEOUT_SECONDS` | `1800` | Job 鎖逾時，也是訊息重新投遞的等待時間 |
 | `OPENMOT_TASK_TIME_LIMIT_SECONDS` | `1500` | 單一 Job 的時間上限，必須小於鎖逾時 |
 
-修改時改 `configMapGenerator` 的字面值再重新 `kubectl apply -k`。ConfigMap 名稱帶有內容雜湊，內容變動會產生新名稱並觸發 Pod 滾動，不會出現「改了設定但 Pod 沒重啟」。`OPENMOT_WEIGHTS` 要與 worker 的掛載路徑一起改。`terminationGracePeriodSeconds`（1560 秒）是以 1500 秒的時間上限加 60 秒緩衝設定的，調高時間上限時也要調高它。
+修改時改 `configMapGenerator` 的字面值再重新 `kubectl apply -k`。ConfigMap 名稱帶有內容雜湊，內容變動會產生新名稱並觸發 Pod 滾動，不會出現「改了設定但 Pod 沒重啟」。本次新增 `OPENMOT_BACKEND` 也會讓 ConfigMap 名稱的雜湊改變，所以套用後 api 與 worker 都會滾動重建一次，這是預期的行為，不是設定錯誤。`OPENMOT_WEIGHTS` 要與 worker 的掛載路徑一起改。`terminationGracePeriodSeconds`（1560 秒）是以 1500 秒的時間上限加 60 秒緩衝設定的，調高時間上限時也要調高它。
 
 設定值無效時，對應的 Pod 會啟動失敗並在日誌指出是哪個變數，例如：
 

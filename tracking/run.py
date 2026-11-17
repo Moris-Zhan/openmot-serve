@@ -75,7 +75,9 @@ def main(
         detect_frame = load_detect_frame(
             arguments.weights, arguments.precision, device, arguments.backend, arguments.engine
         )
-        metadata = RunMetadata(params, WEIGHTS_ID, WEIGHTS_SHA256, arguments.precision)
+        metadata = RunMetadata(
+            params, WEIGHTS_ID, WEIGHTS_SHA256, arguments.precision, arguments.backend
+        )
         summary = track_sequence(arguments.frames_dir, arguments.output, detect_frame, metadata)
     except (
         SequenceError,
