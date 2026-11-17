@@ -21,6 +21,15 @@
 - [ ] 3.2 更新 README 路線圖 v0.3：勾選已驗證的項目、移除「not yet verified」的聲明；驗證 README 與測試（`tests/test_readme_k8s.py`）一致
 - [ ] 3.3 執行預設的完整測試與 `openspec validate verify-kubernetes-on-cluster --strict`；驗證兩者皆通過
 
+## 4. 監控的實機驗證（observability）
+
+前置：`add-kubernetes-monitoring-manifests` 已完成並封存，且叢集已安裝 Prometheus Operator（含 `servicemonitors.monitoring.coreos.com`）與 Prometheus。
+
+- [ ] 4.1 套用 `deploy/k8s/monitoring/`，驗證 `ServiceMonitor` 與 `PrometheusRule` 被建立、Prometheus 的 Targets 出現 api 與 worker 且 `up == 1`、時間序列帶有 `job="openmot-api"` 與 `job="openmot-worker"`；記錄 Operator 與 chart 的版本以及 `serviceMonitorSelector` 的設定
+- [ ] 4.2 送一個 MOT17-09 的 Job，驗證 api 的請求延遲與吞吐、worker 的 Job 耗時與失敗計數、佇列深度都有更新（沒有 GPU 時 worker 的指標標為 BLOCKED，不得當成通過）
+- [ ] 4.3 驗證 `ApiDown` 與 `WorkerDown` 規則已載入；刪除 api Pod 或讓 worker 停止，驗證 target 的 `up` 變成 0、告警進入 pending 再 firing，Pod 恢復後回到 `up == 1`；記錄各階段所花時間
+- [ ] 4.4 把驗證步驟、結果與單機限制寫進 `docs/kubernetes.md`，並更新 README 路線圖 v0.4 的註記（由「未在叢集實測」改為已驗證的範圍）
+
 ## Workflow follow-up
 
 - 全部完成後，用 `/opsx:archive` 封存這個變更並把 delta spec 同步到主 spec。
