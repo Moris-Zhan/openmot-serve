@@ -135,6 +135,31 @@ def test_the_default_backend_is_torch() -> None:
 
 
 def test_an_unsupported_backend_is_rejected_with_the_supported_list() -> None:
-    with pytest.raises(ValueError, match=r"unsupported backend 'tensorrt'.*torch"):
-        DetectorSettings(backend="tensorrt")
+    with pytest.raises(ValueError, match=r"unsupported backend 'openvino'.*torch.*onnx.*tensorrt"):
+        DetectorSettings(backend="openvino")
+
+
+@pytest.mark.parametrize(
+    ("backend", "precision"),
+    [("torch", "fp16"), ("torch", "fp32"), ("onnx", "fp32"), ("tensorrt", "fp16")],
+)
+def test_supported_backend_and_precision_combinations_are_accepted(backend: str, precision: str) -> None:
+    settings = DetectorSettings(backend=backend, precision=precision)
+    assert (settings.backend, settings.precision) == (backend, precision)
+
+
+@pytest.mark.parametrize(
+    ("backend", "precision", "supported"),
+    [("onnx", "fp16", "fp32"), ("tensorrt", "fp32", "fp16")],
+)
+def test_unsupported_combinations_name_the_precisions_the_backend_supports(
+    backend: str, precision: str, supported: str
+) -> None:
+    with pytest.raises(ValueError, match=rf"backend {backend!r}.*precision {precision!r}.*{supported}"):
+        DetectorSettings(backend=backend, precision=precision)
+
+
+def test_an_unknown_precision_is_still_rejected() -> None:
+    with pytest.raises(ValueError, match="precision"):
+        DetectorSettings(precision="int4")
 

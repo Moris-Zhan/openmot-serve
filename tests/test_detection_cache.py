@@ -48,6 +48,18 @@ def test_keys_that_differ_only_in_backend_have_different_digests() -> None:
     assert _key().digest() != _key(backend="onnx").digest()
 
 
+def test_each_backend_gets_its_own_key_and_the_same_backend_gets_the_same_key() -> None:
+    combinations = [("torch", "fp16"), ("torch", "fp32"), ("onnx", "fp32"), ("tensorrt", "fp16")]
+    keys = [
+        CacheKey.from_settings(DetectorSettings(backend=backend, precision=precision), SHA)
+        for backend, precision in combinations
+    ]
+    assert len({key.digest() for key in keys}) == len(combinations)
+    assert [key.backend for key in keys] == ["torch", "torch", "onnx", "tensorrt"]
+    repeated = CacheKey.from_settings(DetectorSettings(backend="onnx", precision="fp32"), SHA)
+    assert repeated == keys[2] and repeated.digest() == keys[2].digest()
+
+
 def test_second_call_with_the_same_key_hits_and_runs_no_detection(tmp_path: Path) -> None:
     frames = _frames(tmp_path / "frames")
     cache = tmp_path / "cache"

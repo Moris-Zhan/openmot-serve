@@ -41,10 +41,13 @@ def test_the_evaluation_guide_describes_the_backend_in_the_cache_key_and_summary
     assert "推論後端" in GUIDE and "不同後端的偵測結果不會互相沿用" in GUIDE
 
 
-def test_the_readme_ticks_only_the_baseline_item_of_v0_5() -> None:
+def test_the_readme_ticks_only_the_finished_items_of_v0_5() -> None:
     roadmap = README[README.index("### v0.5") : README.index("### Later")]
     assert "- [x] Latency and throughput baseline" in roadmap
-    assert roadmap.count("- [x]") == 1 and roadmap.count("- [ ]") == 3
+    assert "- [x] Export the detector to ONNX / TensorRT" in roadmap
+    assert "- [ ] INT8 quantization with calibration" in roadmap
+    assert "- [ ] Before/after comparison of latency, throughput and HOTA" in roadmap
+    assert roadmap.count("- [x]") == 2 and roadmap.count("- [ ]") == 2
 
 
 @pytest.mark.skipif(not (RESULTS / "baseline-torch-fp16-1").is_dir(), reason="local baseline results not present")

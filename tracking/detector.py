@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import torchvision
 
-from tracking.config import SUPPORTED_BACKENDS, SUPPORTED_PRECISIONS
+from tracking.config import SUPPORTED_BACKENDS, SUPPORTED_PRECISIONS, SUPPORTED_PRECISIONS_BY_BACKEND
 from tracking.yolox import YOLOX, load_yolox_x
 
 PERSON_CLASS = 0
@@ -31,6 +31,12 @@ class DetectorSettings:
         if self.precision not in SUPPORTED_PRECISIONS:
             raise ValueError(
                 f"unsupported precision {self.precision!r}, expected one of {SUPPORTED_PRECISIONS}"
+            )
+        supported = SUPPORTED_PRECISIONS_BY_BACKEND[self.backend]
+        if self.precision not in supported:
+            raise ValueError(
+                f"backend {self.backend!r} does not support precision {self.precision!r}, "
+                f"it supports {supported}"
             )
 
 
@@ -90,13 +96,35 @@ class StagedDetector:
     synchronize: Callable[[], None]
 
 
-def torch_staged_detector(detector: Detector) -> StagedDetector:
-    settings = detector.settings
-
+def prepare_stage(settings: DetectorSettings, device: str) -> Callable[[np.ndarray], PreparedFrame]:
     def prepare(image_bgr: np.ndarray) -> PreparedFrame:
         canvas, scale = letterbox(image_bgr, settings.input_height, settings.input_width)
-        batch = torch.from_numpy(canvas).permute(2, 0, 1)[None].float().to(detector.device)
+        batch = torch.from_numpy(canvas).permute(2, 0, 1)[None].float().to(device)
         return PreparedFrame(batch, scale)
+
+    return prepare
+
+
+def finish_stage(settings: DetectorSettings) -> Callable[[torch.Tensor, PreparedFrame], np.ndarray]:
+    def finish(raw: torch.Tensor, prepared: PreparedFrame) -> np.ndarray:
+        persons = select_persons(raw.float(), settings.confidence_floor, settings.nms_threshold)
+        detections = persons.cpu().numpy().astype(np.float64)
+        detections[:, :4] /= prepared.scale
+        return detections
+
+    return finish
+
+
+def synchronize_stage(device: str) -> Callable[[], None]:
+    def synchronize() -> None:
+        if device.startswith("cuda"):
+            torch.cuda.synchronize()
+
+    return synchronize
+
+
+def torch_staged_detector(detector: Detector) -> StagedDetector:
+    settings = detector.settings
 
     def infer(prepared: PreparedFrame) -> torch.Tensor:
         with torch.no_grad(), torch.autocast(
@@ -104,20 +132,18 @@ def torch_staged_detector(detector: Detector) -> StagedDetector:
         ):
             return detector.model(prepared.batch)[0]
 
-    def finish(raw: torch.Tensor, prepared: PreparedFrame) -> np.ndarray:
-        persons = select_persons(raw.float(), settings.confidence_floor, settings.nms_threshold)
-        detections = persons.cpu().numpy().astype(np.float64)
-        detections[:, :4] /= prepared.scale
-        return detections
+    return StagedDetector(
+        prepare_stage(settings, detector.device),
+        infer,
+        finish_stage(settings),
+        synchronize_stage(detector.device),
+    )
 
-    def synchronize() -> None:
-        if detector.device.startswith("cuda"):
-            torch.cuda.synchronize()
 
-    return StagedDetector(prepare, infer, finish, synchronize)
+def run_staged(staged: StagedDetector, image_bgr: np.ndarray) -> np.ndarray:
+    prepared = staged.prepare(image_bgr)
+    return staged.finish(staged.infer(prepared), prepared)
 
 
 def detect(detector: Detector, image_bgr: np.ndarray) -> np.ndarray:
-    staged = torch_staged_detector(detector)
-    prepared = staged.prepare(image_bgr)
-    return staged.finish(staged.infer(prepared), prepared)
+    return run_staged(torch_staged_detector(detector), image_bgr)

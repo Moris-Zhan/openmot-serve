@@ -163,6 +163,14 @@ RTX 5090、驅動 580.126.20、torch 2.7.1+cu128、輸入 800×1440、預設 50 
 - **新的快取鍵不影響分數**：快取鍵加入後端後，既有快取失效，重跑完整 Benchmark Run（`full-fp16-3`）；其 `summary.md` 與改動前的 `full-fp16-2` 逐位元組相同（合併 HOTA 50.78、MOTA 46.14、IDF1 59.82），且 `summary.json` 含 `backend: torch`。
 - 改動前的 `summary.json` 沒有 `backend` 欄位，閱讀時視為 `torch`。
 
+### 驗證紀錄（後端抽出前後）
+
+- **階段抽出不改變輸出**：為了讓 ONNX 與 TensorRT 後端重用前處理與後處理，`tracking/detector.py` 新增 `prepare_stage`、`finish_stage`、`synchronize_stage` 與 `run_staged`，`torch_staged_detector` 與 `detect` 改用它們。在 RTX 5090、FP16、真實權重上，對 MOT17-09-FRCNN 的前 30 張影格，抽出前（`main` 的 `tracking/detector.py`，無 `run_staged`）與抽出後的偵測結果逐元素比對：每張的偵測數量相同，共 430 個偵測框，座標與分數完全相同。
+- **ONNX 匯出**：`python -m inference.export_onnx` 在 `models/engines/` 寫出 `yolox_x-5652330b-800x1440.onnx`（378.1 MiB）與 `yolox_x-5652330b-800x1440.onnx.json`（323 B）。sidecar 記錄 `opset` 17、`exporter` 為 `torchscript`、`torch_version` 為 `2.7.1+cu128`、`precision` 為 `fp32`，以及權重與 ONNX 的 sha256。`models/engines/` 已被 `.gitignore` 忽略，執行後 `git status` 沒有新的未追蹤檔案。
+- **ONNX（FP32）對 PyTorch（FP32）的 parity**：對 MOT17-09-FRCNN 前 30 張影格，以最近框配對比較。兩邊都用預設的 TF32 時，有 1 張影格的偵測數量不同（16 對 15，多出的框分數為 0.10007，貼在信心下限 0.1 上），最大框差 1.84 px、最大分數差 1.4e-3，不符門檻。兩邊都關閉 TF32 時，30 張的偵測數量全部相同，最大框差 0.3775 px（門檻 0.5）、最大分數差 2e-6（門檻 1e-3）。因此 ONNX 後端固定以 `use_tf32=0` 建立 session，使 `fp32` 是嚴格的 FP32；parity 測試也把 PyTorch 參考的 TF32 關閉。
+- **TensorRT FP16 engine 建置**：`python -m inference.build_engine` 在 RTX 5090、TensorRT 10.13.3.9、workspace 8 GiB、預設優化等級下寫出 `yolox_x-5652330b-800x1440-trt10.13.3.9-nvidia-geforce-rtx-5090-fp16.engine`（196.3 MiB）、同名的 `.json` sidecar（529 B）與 `.timing` timing cache（1.4 MiB）。第一次建置 242 秒；緊接著的第二次建置讀取並寫回 timing cache（修改時間更新、大小不變、內容雜湊改變），只花 14 秒。sidecar 記錄權重與 ONNX 的 sha256、輸入尺寸、精度、workspace、優化等級（`default`）、旗標（`FP16`）、TensorRT 版本、GPU 型號與 timing cache 檔名。
+- **TensorRT（FP16）在真實影格上的偵測數量**：對 MOT17-09-FRCNN 前 30 張影格，TensorRT 回傳與 PyTorch 後端相同型別與欄位的偵測（`float64`、5 欄、分數介於 0.1 與 1.0）。偵測總數為 428，PyTorch FP16 為 430；只有 2 張影格的數量不同（第 27 張 16 對 15、第 28 張 14 對 13）。這一項不設逐框容差，完整的 HOTA 比較見下方。
+
 ### 限制
 
 - 數字只代表這一台機器（一張 RTX 5090）與這一組驅動，不可外推到其他硬體。
@@ -170,3 +178,89 @@ RTX 5090、驅動 580.126.20、torch 2.7.1+cu128、輸入 800×1440、預設 50 
 - 量測的是偵測器，不是整條服務：追蹤器、API、佇列與磁碟 I/O 都不在內。
 - 只有 batch 1、單串流；多串流或批次推論的吞吐不在此量測範圍。
 - 預設 CI 沒有 GPU，這個指令的 GPU 測試（`pytest -m "gpu and data"`）只在本機執行，CI 不覆蓋。
+
+## ONNX 與 TensorRT
+
+偵測網路本體（不含 letterbox、人物篩選與 NMS）可以匯出成 ONNX，再建成 TensorRT FP16 engine。三個後端共用同一套前處理與後處理，只有推論引擎不同，所以延遲與 HOTA 的差異只能歸因於推論引擎。
+
+### 安裝、匯出與建置
+
+重依賴放在獨立的 `[export]` extra，預設安裝、預設測試與預設 CI 都不需要它們：
+
+```bash
+pip install -e ".[export]"        # onnx==1.17.0、onnxruntime-gpu==1.22.0、tensorrt-cu12==10.13.3.9
+python -m inference.export_onnx   # 權重 -> models/engines/*.onnx，固定 1×3×800×1440、FP32
+python -m inference.build_engine  # ONNX -> models/engines/*.engine，FP16
+```
+
+使用時在三個入口（`tracking.run`、`eval.run`、`eval.latency`）加上後端與精度，兩者必須明確搭配，不做隱性推斷：
+
+```bash
+python -m eval.run --backend onnx --precision fp32
+python -m eval.run --backend tensorrt --precision fp16
+python -m eval.latency --backend tensorrt --precision fp16 --engine path/to/other.engine
+```
+
+支援的組合只有 `torch`＋`fp16`／`fp32`、`onnx`＋`fp32`、`tensorrt`＋`fp16`；其他組合在載入模型之前就以非 0 的結束碼拒絕，錯誤訊息列出該後端支援的精度。
+
+### 產物命名與驗證
+
+產物預設放在被 git 忽略的 `models/engines/`，檔名由來源決定，不同權重、GPU 或 TensorRT 版本不會互相覆蓋：
+
+| 產物 | 檔名 |
+| --- | --- |
+| ONNX | `yolox_x-<權重 sha256 前 8 碼>-800x1440.onnx` |
+| engine | `yolox_x-<權重 sha8>-800x1440-trt<TensorRT 版本>-<GPU>-fp16.engine` |
+| sidecar | `<產物檔名>.json`，記錄來源與建置參數 |
+| timing cache | `<engine 檔名>.timing`，只加速重建，不影響正確性 |
+
+載入前會逐項比對 sidecar：目前權重檔重新計算的 sha256、ONNX 檔重新計算的 sha256（不只信任 sidecar）、輸入尺寸；engine 另比對 TensorRT 版本與 GPU 型號。任何一項不符就失敗並指名項目；產物不存在時，錯誤訊息含預期檔名與建置指令。`eval.run` 與 `eval.latency` 在建立結果資料夾之前就完成這項驗證，即使偵測快取全部命中、根本不載入模型，過期的產物也會被發現。`summary.json` 與 `latency.json` 另記錄 `artifact`（檔名、ONNX sha256、函式庫版本；TensorRT 另含建置參數與 GPU 型號），PyTorch 後端不多出這個欄位。
+
+### 版本固定的理由
+
+- `onnxruntime-gpu` 固定 1.22.0：1.32.0 需要 CUDA 13，在 CUDA 12.8 的環境載入執行提供者失敗時**不報錯、悄悄退回 CPU**，使「ONNX 延遲」其實是 CPU 的延遲。後端因此在建立 session 後明確檢查第一個執行提供者必須是 `CUDAExecutionProvider`，否則載入失敗，不退回 CPU。
+- `tensorrt-cu12` 固定 10.13.3.9：在 RTX 5090（Blackwell）與 CUDA 12.8 上實測可建置 FP16 engine。
+- 升級其中任何一個，都要重新建置 engine 並重跑下方的 parity 與 HOTA 比較。
+
+### ONNX 的 FP32 是嚴格的 FP32
+
+onnxruntime 的 CUDA 執行提供者與 PyTorch 的卷積預設都以 TF32 計算，兩邊的捨入不同。在 30 張真實影格上，兩邊都用預設的 TF32 時，ONNX 與 PyTorch 的偵測在門檻邊緣會出現差異（見上方「驗證紀錄」），只有兩邊都關閉 TF32 才符合門檻。因此 ONNX 後端建立 session 時固定傳入 `use_tf32=0`，使 `fp32` 是嚴格的 FP32；代價是 ONNX 的延遲比允許 TF32 時高。PyTorch 的 `fp32` 後端沒有改動，仍使用 PyTorch 的預設設定。
+
+### 準確度對照（HOTA）
+
+Validation Half、7 個序列、各自調參後的合併分數；每次都是冷快取的完整 Benchmark Run（快取鍵含後端與精度，不會混用）：
+
+| Run | 後端 | 精度 | HOTA | MOTA | IDF1 | 與基準 HOTA 的差 |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `full-fp16-3`（基準） | torch | fp16 | 50.78 | 46.14 | 59.82 | 0 |
+| `full-fp32-1` | torch | fp32 | 50.80 | 46.15 | 59.81 | +0.02 |
+| `full-onnx-fp32-1` | onnx | fp32 | 50.80 | 46.15 | 59.81 | +0.02 |
+| `full-tensorrt-fp16-1` | tensorrt | fp16 | 50.85 | 46.14 | 59.93 | +0.07 |
+
+ONNX 與 TensorRT 的合併 HOTA 都在基準的 0.5 以內；ONNX（fp32）與 PyTorch（fp32）的三項分數相同到小數點後兩位。這個差距只代表這個資料切分與這一次調參的結果，不是 TensorRT 一定比較準。
+
+### 延遲與吞吐對照
+
+RTX 5090、驅動 580.126.20、torch 2.7.1+cu128、onnxruntime-gpu 1.22.0、TensorRT 10.13.3.9、輸入 800×1440、預設 50 + 500 張、batch 1、單串流，量測前 GPU 閒置。每個後端連續量測兩次：
+
+| Run | 後端 | 精度 | 純推論中位數 / p95 (ms) | 端到端中位數 / p95 (ms) | 吞吐 (FPS) |
+| --- | --- | --- | ---: | ---: | ---: |
+| `lat-torch-fp16-1` | torch | fp16 | 11.24 / 11.64 | 18.11 / 20.26 | 55.3 |
+| `lat-torch-fp16-2` | torch | fp16 | 11.25 / 11.59 | 18.14 / 20.44 | 55.2 |
+| `lat-onnx-fp32-1` | onnx | fp32 | 36.04 / 36.32 | 45.54 / 48.68 | 21.8 |
+| `lat-onnx-fp32-2` | onnx | fp32 | 36.07 / 36.36 | 45.71 / 49.21 | 21.7 |
+| `lat-tensorrt-fp16-1` | tensorrt | fp16 | 4.75 / 4.82 | 10.47 / 13.62 | 91.6 |
+| `lat-tensorrt-fp16-2` | tensorrt | fp16 | 4.75 / 4.81 | 10.63 / 13.91 | 90.4 |
+
+- 同一後端兩次的純推論中位數相差不到 0.1 ms，端到端中位數相差不到 2%。
+- TensorRT（fp16）的純推論約為 PyTorch（fp16）的 2.4 倍快，端到端約 1.7 倍快，吞吐從約 55 FPS 到約 91 FPS。端到端與純推論的差距（前處理與後處理）約 6 ms，在 TensorRT 下已成為延遲的大宗。
+- ONNX（fp32）的數字**不能**拿來和 FP16 的兩列比較：它是嚴格的 FP32（TF32 關閉），精度與其他兩者不同。這份對照沒有量測 PyTorch（fp32）的延遲，所以不能由此判斷 ONNX Runtime 與 PyTorch 在同精度下誰快。
+
+### 已知限制
+
+- engine 綁定建置它的 GPU 型號與 TensorRT 版本，換機器或升級後必須重新建置；載入時會被拒絕並提示重建。
+- 輸入固定為 1×3×800×1440，不支援動態形狀或批次推論。
+- INT8 量化不在這次範圍，留給後續的 `add-int8-quantization`。
+- 服務（worker）尚未提供選擇後端的設定；這次只在三個命令列入口提供，worker 與 Docker 目標留給後續的 `serve-optimized-backend`。
+- 數字只代表這一台機器（一張 RTX 5090）與這一組驅動與函式庫版本，不可外推到其他硬體。
+- 需要 GPU 與 `[export]` 套件的測試（`pytest -m "gpu and data"`）只在本機執行，GitHub CI 不覆蓋；預設的 `pytest` 在沒有安裝 `[export]` 的環境也全數通過。

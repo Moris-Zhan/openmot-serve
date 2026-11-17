@@ -2,25 +2,45 @@ import argparse
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Protocol
 
 import numpy as np
 import torch
 
-from tracking.config import SUPPORTED_PRECISIONS, ConfigError, RunMetadata, load_tracker_params
+from inference.artifacts import ArtifactError
+from inference.backends import BackendError
+from tracking.config import (
+    SUPPORTED_BACKENDS,
+    SUPPORTED_PRECISIONS,
+    ConfigError,
+    RunMetadata,
+    load_tracker_params,
+)
 from tracking.detector import DetectorSettings, detect, load_detector
 from tracking.sequence import SequenceError, list_frames, track_sequence
 from tracking.yolox import WEIGHTS_ID, WEIGHTS_SHA256, WeightsIntegrityError
 
 DEFAULT_WEIGHTS = Path(__file__).resolve().parents[1] / "models" / "yolox_x.pth"
 
-DetectorLoader = Callable[[Path, str, str], Callable[[np.ndarray], np.ndarray]]
+class DetectorLoader(Protocol):
+    def __call__(
+        self, weights: Path, precision: str, device: str, backend: str = "torch", engine: Path | None = None
+    ) -> Callable[[np.ndarray], np.ndarray]: ...
 
 
 def load_default_detect_frame(
-    weights: Path, precision: str, device: str
+    weights: Path, precision: str, device: str, backend: str = "torch", engine: Path | None = None
 ) -> Callable[[np.ndarray], np.ndarray]:
-    detector = load_detector(weights, DetectorSettings(precision=precision), device)
-    return lambda image: detect(detector, image)
+    settings = DetectorSettings(precision=precision, backend=backend)
+    if backend == "torch":
+        detector = load_detector(weights, settings, device)
+        return lambda image: detect(detector, image)
+    from inference import backends
+    from tracking.detector import run_staged
+
+    artifact = backends.resolve_backend_artifact(backend, settings, weights, engine)
+    staged = backends.load_staged_detector(backend, weights, settings, device, artifact)
+    return lambda image: run_staged(staged, image)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,6 +52,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, required=True, help="result file to write, e.g. out/MOT17-09.txt")
     parser.add_argument("--config", type=Path, help="TOML file with a [tracker] table")
     parser.add_argument("--precision", choices=SUPPORTED_PRECISIONS, default="fp16")
+    parser.add_argument("--backend", choices=SUPPORTED_BACKENDS, default="torch")
+    parser.add_argument("--engine", type=Path, help="explicit ONNX or engine file, default found by naming convention")
     parser.add_argument("--weights", type=Path, default=DEFAULT_WEIGHTS)
     parser.add_argument("--device", help="torch device, default cuda when available")
     return parser
@@ -48,11 +70,21 @@ def main(
         return 2
     try:
         list_frames(arguments.frames_dir)
+        DetectorSettings(precision=arguments.precision, backend=arguments.backend)
         device = arguments.device or ("cuda" if torch.cuda.is_available() else "cpu")
-        detect_frame = load_detect_frame(arguments.weights, arguments.precision, device)
+        detect_frame = load_detect_frame(
+            arguments.weights, arguments.precision, device, arguments.backend, arguments.engine
+        )
         metadata = RunMetadata(params, WEIGHTS_ID, WEIGHTS_SHA256, arguments.precision)
         summary = track_sequence(arguments.frames_dir, arguments.output, detect_frame, metadata)
-    except (SequenceError, WeightsIntegrityError, FileNotFoundError, ValueError) as error:
+    except (
+        SequenceError,
+        WeightsIntegrityError,
+        ArtifactError,
+        BackendError,
+        FileNotFoundError,
+        ValueError,
+    ) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     print(f"wrote {summary.row_count} rows for {summary.frame_count} frames to {arguments.output}")

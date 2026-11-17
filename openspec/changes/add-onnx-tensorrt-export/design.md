@@ -116,7 +116,7 @@ sidecar 欄位（皆為 JSON，鍵排序、結尾換行，與專案其他 JSON �
 
 `infer` 以 `io_binding` 把輸入綁到 torch 張量的 `data_ptr()`、輸出綁到預先配置的 torch 張量，呼叫 `run_with_iobinding` 後以 `synchronize_outputs` 確保完成。匯入順序：後端模組先 `import torch` 再 `import onnxruntime`，使 torch 隨附的 CUDA 與 cuDNN 函式庫先被載入（實測環境即是此順序）。
 
-- TF32：onnxruntime CUDA 執行提供者與 PyTorch 的卷積預設都可能以 TF32 計算。驗收（30 張真實影格、框差 ≤0.5 px、分數差 ≤1e-3）若因此不過，先以執行提供者的 `use_tf32` 選項與 `torch.backends.cudnn.allow_tf32` 對齊兩邊再比；仍不過就如實記錄實際差距並與使用者討論容差，**不**悄悄放寬。這是已知的待驗證點，列在 Open Questions。
+- TF32：onnxruntime CUDA 執行提供者與 PyTorch 的卷積預設都以 TF32 計算，兩邊捨入不同。**實測結果**（30 張 MOT17-09-FRCNN 影格，以最近框配對量測）：兩邊都用預設的 TF32 時，有 1 張影格的偵測數量不同（分數 0.10007 的門檻邊緣偵測）、最大框差 1.84 px、最大分數差 1.4e-3，不符門檻；只有兩邊都關閉 TF32 時才符合（數量全部相同、最大框差 0.3775 px、最大分數差 2e-6）。**決定（使用者選擇）**：ONNX 後端建立 session 時固定傳入 `use_tf32: "0"`，使 `fp32` 就是嚴格的 FP32；parity 測試把 PyTorch 參考的 `torch.backends.cudnn.allow_tf32` 與 `torch.backends.cuda.matmul.allow_tf32` 關閉再比。代價是 ONNX 的延遲會比允許 TF32 時高，延遲對照表需註明。
 
 ### 9. 依賴與版本固定
 
@@ -155,5 +155,5 @@ sidecar 欄位（皆為 JSON，鍵排序、結尾換行，與專案其他 JSON �
 
 ## Open Questions
 
-- ONNX（FP32）與 PyTorch（FP32）在 30 張真實影格上能否落在框差 ≤0.5 px、分數差 ≤1e-3？取決於 TF32 與兩邊的卷積演算法選擇，只能在實作時實測；不過就依決策 8 處理並回報。
+- ~~ONNX（FP32）與 PyTorch（FP32）在 30 張真實影格上能否落在框差 ≤0.5 px、分數差 ≤1e-3？~~ 已解決：兩邊都關閉 TF32 時符合（見決策 8 的實測數字）；預設 TF32 下不符，故 ONNX 後端固定關閉 TF32。
 - TensorRT FP16 的合併 HOTA 與 50.78 的差距是否在 0.5 內？同樣只能實測。

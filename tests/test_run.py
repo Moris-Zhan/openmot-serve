@@ -11,6 +11,8 @@ import pytest
 from eval.detection_cache import CacheKey, detect_with_cache
 from eval.run import BenchmarkConfig, Dependencies, main
 from eval.tuning import read_params
+from inference.artifacts import ArtifactError, ArtifactInfo
+from inference.backends import describe_artifact
 from tracking.bytetrack import TrackerParams, run_tracker
 from tracking.detector import DetectorSettings
 from tracking.env_check import CheckOutcome, EnvReport
@@ -63,14 +65,29 @@ class Harness:
         self.detector = FakeDetector()
         self.loads = 0
         self.loaded_with: list[tuple[str, str]] = []
+        self.load_calls: list[tuple[str, Path | None]] = []
+        self.resolutions: list[tuple[str, DetectorSettings, Path | None]] = []
+        self.artifact: ArtifactInfo | None = None
+        self.resolve_error: Exception | None = None
         for name in SEQUENCES:
             _write_sequence(self.data_root, name)
-        self.dependencies = Dependencies(lambda: outcome, self._load)
+        self.dependencies = Dependencies(lambda: outcome, self._load, self._resolve)
 
-    def _load(self, weights: Path, precision: str, device: str) -> FakeDetector:
+    def _load(
+        self, weights: Path, precision: str, device: str, backend: str = "torch", engine: Path | None = None
+    ) -> FakeDetector:
         self.loads += 1
         self.loaded_with.append((precision, device))
+        self.load_calls.append((backend, engine))
         return self.detector
+
+    def _resolve(
+        self, backend: str, settings: DetectorSettings, weights: Path, engine: Path | None
+    ) -> ArtifactInfo | None:
+        self.resolutions.append((backend, settings, engine))
+        if self.resolve_error is not None:
+            raise self.resolve_error
+        return self.artifact if backend != "torch" else None
 
     def run(self, run_name: str, extra: tuple[str, ...] = ()) -> int:
         argv = [
@@ -268,3 +285,98 @@ def test_config_is_a_frozen_dataclass() -> None:
     config = BenchmarkConfig(Path("a"), Path("b"), "run", "fp16", Path("w"), "cpu")
     with pytest.raises(AttributeError):
         config.run_name = "other"  # type: ignore[misc]
+
+
+TENSORRT_SIDECAR = {
+    "onnx_sha256": "c" * 64,
+    "tensorrt_version": "10.13.3.9",
+    "gpu_name": "Fake GPU",
+    "precision": "fp16",
+    "workspace_bytes": 8 * 2**30,
+    "optimization_level": "default",
+    "builder_flags": ["FP16"],
+}
+ONNX_SIDECAR = {"onnx_sha256": "c" * 64}
+
+
+def test_the_default_backend_is_torch_with_no_artifact_record(tmp_path: Path) -> None:
+    harness = Harness(tmp_path)
+    assert harness.run("first") == 0
+    summary = json.loads((harness.results_root / "first" / "summary.json").read_text())
+    assert summary["backend"] == "torch" and "artifact" not in summary
+    assert harness.load_calls == [("torch", None)] and [call[0] for call in harness.resolutions] == ["torch"]
+
+
+def test_an_exported_backend_is_resolved_loaded_and_recorded_in_the_summary(tmp_path: Path) -> None:
+    harness = Harness(tmp_path)
+    harness.artifact = ArtifactInfo(Path("models/engines/m.engine"), TENSORRT_SIDECAR)
+    assert harness.run("trt", ("--backend", "tensorrt")) == 0
+    summary = json.loads((harness.results_root / "trt" / "summary.json").read_text())
+    assert summary["backend"] == "tensorrt" and summary["detector"]["backend"] == "tensorrt"
+    assert summary["artifact"] == describe_artifact("tensorrt", harness.artifact)
+    assert summary["artifact"]["file"] == "m.engine" and summary["artifact"]["tensorrt"] == "10.13.3.9"
+    assert harness.load_calls == [("tensorrt", Path("models/engines/m.engine"))]
+
+
+def test_the_onnx_summary_records_the_file_hash_and_the_runtime_version(tmp_path: Path) -> None:
+    harness = Harness(tmp_path)
+    harness.artifact = ArtifactInfo(Path("m.onnx"), ONNX_SIDECAR)
+    assert harness.run("onnx", ("--backend", "onnx", "--precision", "fp32")) == 0
+    summary = json.loads((harness.results_root / "onnx" / "summary.json").read_text())
+    assert summary["artifact"] == describe_artifact("onnx", harness.artifact)
+    assert summary["artifact"]["onnx_sha256"] == "c" * 64 and summary["precision"] == "fp32"
+
+
+def test_an_explicit_engine_path_is_handed_to_the_resolver(tmp_path: Path) -> None:
+    harness = Harness(tmp_path)
+    harness.artifact = ArtifactInfo(Path("custom.engine"), TENSORRT_SIDECAR)
+    assert harness.run("trt", ("--backend", "tensorrt", "--engine", "custom.engine")) == 0
+    assert harness.resolutions[0][2] == Path("custom.engine")
+
+
+def test_an_unsupported_combination_is_rejected_before_anything_runs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    harness = Harness(tmp_path)
+    assert harness.run("bad", ("--backend", "onnx")) != 0
+    error = capsys.readouterr().err
+    assert "onnx" in error and "fp32" in error
+    assert harness.loads == 0 and harness.resolutions == [] and not harness.results_root.exists()
+
+
+def test_a_missing_or_mismatched_artifact_writes_no_result_folder_and_loads_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    harness = Harness(tmp_path)
+    harness.resolve_error = ArtifactError("weights_sha256 mismatch: sidecar has a, current is b")
+    assert harness.run("stale", ("--backend", "tensorrt")) != 0
+    assert "weights_sha256 mismatch" in capsys.readouterr().err
+    assert harness.loads == 0 and harness.detector.calls == 0 and not (harness.results_root / "stale").exists()
+
+
+def test_a_stale_artifact_is_caught_even_when_the_detection_cache_would_fully_hit(tmp_path: Path) -> None:
+    harness = Harness(tmp_path)
+    harness.artifact = ArtifactInfo(Path("m.engine"), TENSORRT_SIDECAR)
+    assert harness.run("first", ("--backend", "tensorrt")) == 0
+    loads = harness.loads
+    harness.resolve_error = ArtifactError("gpu_name mismatch")
+    assert harness.run("second", ("--backend", "tensorrt")) != 0
+    assert harness.loads == loads and not (harness.results_root / "second").exists()
+
+
+def test_a_cache_hit_still_resolves_the_artifact_but_loads_no_model(tmp_path: Path) -> None:
+    harness = Harness(tmp_path)
+    harness.artifact = ArtifactInfo(Path("m.engine"), TENSORRT_SIDECAR)
+    harness.run("first", ("--backend", "tensorrt"))
+    loads, resolutions = harness.loads, len(harness.resolutions)
+    assert harness.run("second", ("--backend", "tensorrt")) == 0
+    assert harness.loads == loads and len(harness.resolutions) == resolutions + 1
+
+
+def test_backends_do_not_share_cached_detections(tmp_path: Path) -> None:
+    harness = Harness(tmp_path)
+    harness.artifact = ArtifactInfo(Path("m.engine"), TENSORRT_SIDECAR)
+    harness.run("torch-run")
+    calls_after_torch = harness.detector.calls
+    harness.run("trt-run", ("--backend", "tensorrt"))
+    assert harness.detector.calls > calls_after_torch

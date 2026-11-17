@@ -9,6 +9,7 @@ data/results/
 *.pth
 *.onnx
 *.engine
+models/engines/
 runs/
 # graphify intermediate files (graph.json and GRAPH_REPORT.md stay trackable)
 graphify-out/.graphify_*

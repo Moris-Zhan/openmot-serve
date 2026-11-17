@@ -15,8 +15,10 @@ from eval.halves import HalfError, materialize_half
 from eval.scoring import ScoreReport, Scores, ScoringError, score_sequences
 from eval.split import split_sequence
 from eval.tuning import TuningError, TuningResult, TuningSequence, tune_parameters, write_params
+from inference.artifacts import ArtifactError, ArtifactInfo
+from inference.backends import BackendError, describe_artifact, resolve_backend_artifact
 from tracking.bytetrack import run_tracker
-from tracking.config import SUPPORTED_PRECISIONS
+from tracking.config import SUPPORTED_BACKENDS, SUPPORTED_PRECISIONS
 from tracking.detector import DetectorSettings
 from tracking.env_check import (
     CheckOutcome,
@@ -49,12 +51,18 @@ class BenchmarkConfig:
     weights: Path
     device: str
     sequences: tuple[str, ...] = DEFAULT_SEQUENCES
+    backend: str = "torch"
+    engine: Path | None = None
+
+
+ArtifactResolver = Callable[[str, DetectorSettings, Path, Path | None], ArtifactInfo | None]
 
 
 @dataclass(frozen=True)
 class Dependencies:
     check_environment: Callable[[], CheckOutcome]
     load_detect_frame: DetectorLoader
+    resolve_artifact: ArtifactResolver = resolve_backend_artifact
 
 
 def default_dependencies() -> Dependencies:
@@ -74,12 +82,15 @@ def _missing_sequences(config: BenchmarkConfig) -> list[str]:
     return [name for name in config.sequences if not complete(name)]
 
 
-def _lazy_detect_frame(loader: DetectorLoader, config: BenchmarkConfig) -> DetectFrame:
+def _lazy_detect_frame(
+    loader: DetectorLoader, config: BenchmarkConfig, artifact: ArtifactInfo | None
+) -> DetectFrame:
     loaded: list[DetectFrame] = []
+    engine = artifact.path if artifact is not None else None
 
     def detect_frame(image: np.ndarray) -> np.ndarray:
         if not loaded:
-            loaded.append(loader(config.weights, config.precision, config.device))
+            loaded.append(loader(config.weights, config.precision, config.device, config.backend, engine))
         return loaded[0](image)
 
     return detect_frame
@@ -134,10 +145,14 @@ def _scores_document(scores: Scores) -> dict[str, float]:
 
 
 def _summary_document(
-    settings: DetectorSettings, tuning: TuningResult, report: ScoreReport, outcome: CheckOutcome
+    settings: DetectorSettings,
+    tuning: TuningResult,
+    report: ScoreReport,
+    outcome: CheckOutcome,
+    artifact: dict[str, object] | None = None,
 ) -> dict[str, object]:
     environment = outcome.report
-    return {
+    document = {
         "weights": {"id": WEIGHTS_ID, "sha256": WEIGHTS_SHA256},
         "backend": settings.backend,
         "precision": settings.precision,
@@ -157,6 +172,7 @@ def _summary_document(
             "combined": _scores_document(report.combined),
         },
     }
+    return document if artifact is None else {**document, "artifact": artifact}
 
 
 def _markdown_table(report: ScoreReport) -> str:
@@ -179,21 +195,22 @@ def execute(config: BenchmarkConfig, dependencies: Dependencies) -> str:
     outcome = dependencies.check_environment()
     if not outcome.passed:
         raise BenchmarkError("environment check failed:\n" + format_outcome(outcome))
+    settings = DetectorSettings(precision=config.precision, backend=config.backend)
+    artifact = dependencies.resolve_artifact(config.backend, settings, config.weights, config.engine)
     run_dir = config.results_root / config.run_name
     if run_dir.exists():
         raise BenchmarkError(f"run folder already exists: {run_dir}")
     run_dir.mkdir(parents=True)
 
-    settings = DetectorSettings(precision=config.precision)
     key = CacheKey.from_settings(settings, WEIGHTS_SHA256)
     cache_dir = config.results_root / "cache"
-    detect_frame = _lazy_detect_frame(dependencies.load_detect_frame, config)
+    detect_frame = _lazy_detect_frame(dependencies.load_detect_frame, config, artifact)
 
     tuning = _tune(config, run_dir, key, cache_dir, detect_frame)
     write_params(run_dir / "params.json", tuning.best)
     report = _validate(config, run_dir, key, cache_dir, detect_frame, tuning)
 
-    summary = _summary_document(settings, tuning, report, outcome)
+    summary = _summary_document(settings, tuning, report, outcome, describe_artifact(config.backend, artifact))
     write_text_atomic(run_dir / "summary.json", json.dumps(summary, indent=2, sort_keys=True) + "\n")
     table = _markdown_table(report)
     write_text_atomic(run_dir / "summary.md", table)
@@ -206,6 +223,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Tune on the Tuning Half, score on the Validation Half and write summary.json.",
     )
     parser.add_argument("--precision", choices=SUPPORTED_PRECISIONS, default="fp16")
+    parser.add_argument("--backend", choices=SUPPORTED_BACKENDS, default="torch")
+    parser.add_argument("--engine", type=Path, help="explicit ONNX or engine file, default found by naming convention")
     parser.add_argument("--weights", type=Path, default=DEFAULT_WEIGHTS)
     parser.add_argument("--device", help="torch device, default cuda when available")
     parser.add_argument("--data-root", type=Path, default=PROJECT_ROOT / "data" / "MOT17")
@@ -225,10 +244,14 @@ def main(argv: Sequence[str] | None = None, dependencies: Dependencies | None = 
         weights=arguments.weights,
         device=arguments.device or ("cuda" if torch.cuda.is_available() else "cpu"),
         sequences=tuple(arguments.sequences),
+        backend=arguments.backend,
+        engine=arguments.engine,
     )
     try:
         table = execute(config, dependencies or default_dependencies())
     except (
+        ArtifactError,
+        BackendError,
         BenchmarkError,
         HalfError,
         ScoringError,

@@ -27,9 +27,14 @@ service = [
   "redis>=5",
   "prometheus_client==0.21.1",
 ]
+export = [
+  "onnx==1.17.0",
+  "onnxruntime-gpu==1.22.0",
+  "tensorrt-cu12==10.13.3.9",
+]
 
 [tool.setuptools.packages.find]
-include = ["tracking*", "eval*", "jobs*", "app*", "worker*", "metrics*"]
+include = ["tracking*", "eval*", "jobs*", "app*", "worker*", "metrics*", "inference*"]
 
 [tool.uv.sources]
 torch = { index = "pytorch-cu128" }

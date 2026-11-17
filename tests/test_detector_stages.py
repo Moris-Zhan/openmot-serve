@@ -5,9 +5,14 @@ import torch
 from tracking.detector import (
     Detector,
     DetectorSettings,
+    StagedDetector,
     detect,
+    finish_stage,
     letterbox,
+    prepare_stage,
+    run_staged,
     select_persons,
+    synchronize_stage,
     torch_staged_detector,
 )
 
@@ -102,4 +107,64 @@ def test_synchronize_waits_for_the_gpu_on_a_cuda_device(monkeypatch: pytest.Monk
     monkeypatch.setattr(torch.cuda, "synchronize", lambda *_: calls.append("sync"))
     detector = Detector(FakeModel(), DetectorSettings(), "cuda")  # type: ignore[arg-type]
     torch_staged_detector(detector).synchronize()
+    assert calls == ["sync"]
+
+
+def test_run_staged_equals_detect_for_the_same_image_and_model_output() -> None:
+    detector = _detector(FakeModel())
+    image = _image()
+    assert np.array_equal(run_staged(torch_staged_detector(detector), image), detect(detector, image))
+
+
+def test_run_staged_calls_the_stages_in_order_and_passes_the_prepared_frame_through() -> None:
+    calls: list[str] = []
+    settings = DetectorSettings(precision="fp32")
+    prepare = prepare_stage(settings, "cpu")
+    finish = finish_stage(settings)
+
+    def recording_prepare(image: np.ndarray):
+        calls.append("prepare")
+        return prepare(image)
+
+    def recording_infer(prepared):
+        calls.append("infer")
+        return _raw()[0]
+
+    def recording_finish(raw: torch.Tensor, prepared):
+        calls.append("finish")
+        return finish(raw, prepared)
+
+    staged = StagedDetector(recording_prepare, recording_infer, recording_finish, lambda: None)
+    image = _image()
+    detections = run_staged(staged, image)
+    assert calls == ["prepare", "infer", "finish"]
+    assert np.array_equal(detections, _expected_detections(image, settings))
+
+
+def test_shared_stages_are_built_from_settings_and_device_without_a_model() -> None:
+    settings = DetectorSettings(precision="fp32")
+    image = _image()
+    prepared = prepare_stage(settings, "cpu")(image)
+    assert prepared.batch.shape == (1, 3, 800, 1440) and prepared.batch.dtype == torch.float32
+    detections = finish_stage(settings)(_raw()[0], prepared)
+    assert np.array_equal(detections, _expected_detections(image, settings))
+
+
+def test_the_shared_stages_match_those_of_the_torch_staged_detector() -> None:
+    detector = _detector(FakeModel())
+    staged = torch_staged_detector(detector)
+    image = _image()
+    shared = prepare_stage(detector.settings, "cpu")(image)
+    from_torch = staged.prepare(image)
+    assert torch.equal(shared.batch, from_torch.batch) and shared.scale == from_torch.scale
+
+
+def test_the_shared_synchronize_stage_only_touches_cuda_for_a_cuda_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(torch.cuda, "synchronize", lambda *_: calls.append("sync"))
+    synchronize_stage("cpu")()
+    assert calls == []
+    synchronize_stage("cuda")()
     assert calls == ["sync"]

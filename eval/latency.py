@@ -8,14 +8,22 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from itertools import cycle, islice
 from pathlib import Path
+from typing import Protocol
 
 import cv2
 import numpy as np
 import torch
 
 from eval.split import split_sequence
-from tracking.config import SUPPORTED_PRECISIONS
-from tracking.detector import DetectorSettings, StagedDetector, load_detector, torch_staged_detector
+from inference.artifacts import ArtifactError, ArtifactInfo
+from inference.backends import (
+    BackendError,
+    describe_artifact,
+    load_staged_detector,
+    resolve_backend_artifact,
+)
+from tracking.config import SUPPORTED_BACKENDS, SUPPORTED_PRECISIONS
+from tracking.detector import DetectorSettings, StagedDetector
 from tracking.env_check import (
     CheckOutcome,
     EnvProbe,
@@ -36,7 +44,13 @@ DEFAULT_SEQUENCES = tuple(f"MOT17-{number}-FRCNN" for number in ("02", "04", "05
 DEFAULT_WARMUP = 50
 DEFAULT_MEASURED = 500
 
-StagedLoader = Callable[[Path, str, str], StagedDetector]
+class StagedLoader(Protocol):
+    def __call__(
+        self, weights: Path, precision: str, device: str, backend: str = "torch", engine: Path | None = None
+    ) -> StagedDetector: ...
+
+
+ArtifactResolver = Callable[[str, DetectorSettings, Path, Path | None], ArtifactInfo | None]
 
 
 class LatencyError(RuntimeError):
@@ -141,6 +155,7 @@ class Dependencies:
     check_environment: Callable[[], CheckOutcome]
     load_staged: StagedLoader
     clock: Callable[[], float] = time.perf_counter
+    resolve_artifact: ArtifactResolver = resolve_backend_artifact
 
 
 @dataclass(frozen=True)
@@ -154,20 +169,26 @@ class LatencyConfig:
     sequences: tuple[str, ...]
     warmup: int
     measured: int
+    backend: str = "torch"
+    engine: Path | None = None
 
     @property
     def result_dir(self) -> Path:
         return self.results_root / "latency" / self.run_name
 
 
-def _load_torch_staged(weights: Path, precision: str, device: str) -> StagedDetector:
-    return torch_staged_detector(load_detector(weights, DetectorSettings(precision=precision), device))
+def _load_staged(
+    weights: Path, precision: str, device: str, backend: str = "torch", engine: Path | None = None
+) -> StagedDetector:
+    settings = DetectorSettings(precision=precision, backend=backend)
+    artifact = resolve_backend_artifact(backend, settings, weights, engine)
+    return load_staged_detector(backend, weights, settings, device, artifact)
 
 
 def default_dependencies() -> Dependencies:
     return Dependencies(
         check_environment=lambda: run_env_check(EnvProbe(read_torch_report, torch_gpu_matches_cpu)),
-        load_staged=_load_torch_staged,
+        load_staged=_load_staged,
     )
 
 
@@ -186,10 +207,14 @@ def _stats_document(stats: LatencyStats) -> dict[str, float]:
 
 
 def _result_document(
-    config: LatencyConfig, settings: DetectorSettings, result: LatencyResult, outcome: CheckOutcome
+    config: LatencyConfig,
+    settings: DetectorSettings,
+    result: LatencyResult,
+    outcome: CheckOutcome,
+    artifact: dict[str, object] | None = None,
 ) -> dict[str, object]:
     environment = outcome.report
-    return {
+    document = {
         "backend": settings.backend,
         "precision": settings.precision,
         "detector": asdict(settings),
@@ -211,6 +236,7 @@ def _result_document(
             "throughput_fps": result.throughput_fps,
         },
     }
+    return document if artifact is None else {**document, "artifact": artifact}
 
 
 def _markdown_table(result: LatencyResult) -> str:
@@ -245,14 +271,21 @@ def execute(config: LatencyConfig, dependencies: Dependencies) -> str:
     if config.result_dir.exists():
         raise LatencyError(f"result folder already exists: {config.result_dir}")
 
-    settings = DetectorSettings(precision=config.precision)
+    settings = DetectorSettings(precision=config.precision, backend=config.backend)
+    artifact = dependencies.resolve_artifact(config.backend, settings, config.weights, config.engine)
     paths = validation_frame_paths(config.data_root, config.sequences, config.warmup + config.measured)
     frames = load_frames(paths)
-    staged = dependencies.load_staged(config.weights, config.precision, config.device)
+    staged = dependencies.load_staged(
+        config.weights,
+        config.precision,
+        config.device,
+        config.backend,
+        artifact.path if artifact is not None else None,
+    )
     result = measure_latency(staged, frames, config.warmup, config.measured, dependencies.clock)
 
     config.result_dir.mkdir(parents=True)
-    document = _result_document(config, settings, result, outcome)
+    document = _result_document(config, settings, result, outcome, describe_artifact(config.backend, artifact))
     write_text_atomic(config.result_dir / "latency.json", json.dumps(document, indent=2, sort_keys=True) + "\n")
     table = _markdown_table(result)
     write_text_atomic(config.result_dir / "latency.md", table)
@@ -265,6 +298,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Measure detector latency and throughput on Validation Half frames, one frame at a time.",
     )
     parser.add_argument("--precision", choices=SUPPORTED_PRECISIONS, default="fp16")
+    parser.add_argument("--backend", choices=SUPPORTED_BACKENDS, default="torch")
+    parser.add_argument("--engine", type=Path, help="explicit ONNX or engine file, default found by naming convention")
     parser.add_argument("--weights", type=Path, default=DEFAULT_WEIGHTS)
     parser.add_argument("--device", help="torch device, default cuda when available")
     parser.add_argument("--data-root", type=Path, default=PROJECT_ROOT / "data" / "MOT17")
@@ -288,10 +323,20 @@ def main(argv: Sequence[str] | None = None, dependencies: Dependencies | None = 
         sequences=tuple(arguments.sequences),
         warmup=arguments.warmup,
         measured=arguments.measured,
+        backend=arguments.backend,
+        engine=arguments.engine,
     )
     try:
         table = execute(config, dependencies or default_dependencies())
-    except (LatencyError, SequenceError, WeightsIntegrityError, FileNotFoundError, ValueError) as error:
+    except (
+        LatencyError,
+        ArtifactError,
+        BackendError,
+        SequenceError,
+        WeightsIntegrityError,
+        FileNotFoundError,
+        ValueError,
+    ) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     print(table, end="")
