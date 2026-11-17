@@ -110,6 +110,14 @@ def test_the_guide_says_there_is_no_notification_channel() -> None:
     assert "Alertmanager" in GUIDE and "沒有接" in GUIDE
 
 
+def test_the_guide_says_the_down_alerts_also_fire_when_the_target_does_not_exist() -> None:
+    section = GUIDE.split("## 警報規則")[1].split("## dashboard")[0]
+    for alert in ("ApiDown", "WorkerDown"):
+        row = next(line for line in section.splitlines() if line.startswith(f"| `{alert}`"))
+        assert "目標不存在" in row, alert
+    assert "absent" in section and "Pending" in section
+
+
 def test_the_guide_says_worker_down_fires_on_a_stack_without_a_worker() -> None:
     assert "WorkerDown" in GUIDE and "預期" in GUIDE
 
@@ -142,7 +150,8 @@ def test_the_limits_section_names_every_unverified_part() -> None:
     section = _limits_section()
     assert "worker" in section and "沒有 GPU" in section and "無法端到端驗證" in section
     assert "未經真實流量校準" in section
-    assert "Kubernetes" in section and "不在範圍" in section
+    assert "Kubernetes 的監控清單" in section and "未在叢集上驗證" in section
+    assert "不在範圍" not in section.split("Kubernetes 的監控清單")[1].split("\n")[0]
     assert "Alertmanager" in section
     assert "尚未在 GitHub" not in section
 

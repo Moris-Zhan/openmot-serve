@@ -48,6 +48,17 @@ def test_the_live_cluster_verification_stays_open_while_the_guide_says_it_is_unv
     assert not _item("v0.3", "live k3s cluster")
 
 
+def test_the_kubernetes_monitoring_item_is_ticked_with_its_limit_stated() -> None:
+    assert _item("v0.4", "Kubernetes monitoring manifests")
+    text = next(text for text in _roadmap_items("v0.4") if "Kubernetes monitoring manifests" in text)
+    assert "not verified on a live cluster" in text and "render and structure tests only" in text
+
+
+def test_ticking_the_monitoring_item_leaves_the_two_unverified_v0_3_items_open() -> None:
+    assert not _item("v0.3", "GPU scheduling for the worker")
+    assert not _item("v0.3", "live k3s cluster")
+
+
 def test_the_layout_names_what_the_k8s_directory_holds() -> None:
     line = next(line for line in README.splitlines() if "k8s/" in line and "#" in line)
     assert "kustomize" in line and "planned" not in line

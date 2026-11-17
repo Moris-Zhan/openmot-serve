@@ -2,14 +2,14 @@ groups:
   - name: openmot-availability
     rules:
       - alert: ApiDown
-        expr: up{job="openmot-api"} == 0
+        expr: up{job="openmot-api"} == 0 or absent(up{job="openmot-api"})
         for: 1m
         labels:
           severity: critical
         annotations:
           summary: "The openmot api is down or its metrics port is not reachable."
       - alert: WorkerDown
-        expr: up{job="openmot-worker"} == 0
+        expr: up{job="openmot-worker"} == 0 or absent(up{job="openmot-worker"})
         for: 1m
         labels:
           severity: critical

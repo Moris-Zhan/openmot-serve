@@ -1,0 +1,34 @@
+# Cluster-internal Services for Prometheus only. They are separate from the public api Service so the
+# NodePort the k3s overlay gives it never publishes metrics. publishNotReadyAddresses keeps a busy
+# worker (a solo pool cannot answer its readiness probe) and an api without Redis scrapeable.
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-metrics
+  labels:
+    app.kubernetes.io/name: api-metrics
+spec:
+  type: ClusterIP
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: api
+  ports:
+    - name: metrics
+      port: 9101
+      targetPort: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker-metrics
+  labels:
+    app.kubernetes.io/name: worker-metrics
+spec:
+  type: ClusterIP
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: worker
+  ports:
+    - name: metrics
+      port: 9102
+      targetPort: metrics

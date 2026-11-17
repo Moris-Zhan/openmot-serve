@@ -35,7 +35,7 @@
 | 設定 | ConfigMap `openmot-config`（kustomize 產生） | 精度、上限與逾時等 |
 | k3s overlay | `overlays/k3s-single-node/` | Namespace `openmot`、api 改為 NodePort `30080`、`local-path` 儲存類別、權重路徑、映像標籤 `dev` |
 
-api 與 worker 另有 metrics 埠（`9101`、`9102`），目前**沒有**對應的 Service 埠與 `ServiceMonitor`。
+api 與 worker 另有具名的 `metrics` 埠（`9101`、`9102`），以及只給 Prometheus 用的 ClusterIP Service `api-metrics` 與 `worker-metrics`（設 `publishNotReadyAddresses: true`，對外的 `api` Service 沒有指標埠）。`deploy/k8s/monitoring/` 另有 `monitoring` namespace、兩個 `ServiceMonitor` 與一個 `PrometheusRule`，與工作負載 overlay 分開套用（需要 Prometheus Operator 的 CRD）。
 
 ## 已驗證與未驗證
 
@@ -52,7 +52,8 @@ api 與 worker 另有 metrics 埠（`9101`、`9102`），目前**沒有**對應�
 | 刪除 worker、api、Redis 的 Pod 後復原 | 未驗證 | 沒有叢集 |
 | Redis 資料經 PVC 在 Pod 重建後保留 | 未驗證 | 沒有叢集 |
 | 資源值（requests 與 limits） | 未校正 | 目前是估計值 |
-| Prometheus 抓取 api 與 worker | 未驗證，且清單尚未存在 | 見下方 |
+| 監控清單（`ServiceMonitor`、`PrometheusRule`、metrics Service）可渲染、結構正確 | 已驗證 | 渲染、核心資源的 schema 檢查與結構測試（selector、埠名、`job` 標籤與規則一致、`PrometheusRule` 與規則檔相同）；`ApiDown`、`WorkerDown` 的 `absent()` 條件有 promtool 單元測試 |
+| Prometheus 實際抓到 api 與 worker 的指標、`release: monitoring` 的假設、NotReady 的 Pod 是否被抓取 | 未驗證 | 沒有叢集，也沒有 Prometheus Operator |
 
 README 路線圖 v0.3 有兩項保持未勾選：「GPU scheduling for the worker」與「Verify the deployment, GPU scheduling and pod recovery on a live k3s cluster」。
 
@@ -66,7 +67,7 @@ README 路線圖 v0.3 有兩項保持未勾選：「GPU scheduling for the worke
 | change | 進度 | 說明 |
 | --- | --- | --- |
 | `verify-kubernetes-on-cluster` | 0/16 | 實機驗證：k3s 與 GPU 環境、冷部署、端對端、Pod 重建、資源校正，第 4 節為監控實機驗收；**阻塞**，需要使用者提供宿主機或獨立 VM 與 kubeconfig |
-| `add-kubernetes-monitoring-manifests` | 尚未提案 | 已規劃：`deploy/k8s/monitoring/`（`monitoring` namespace、兩個 `ServiceMonitor`、`PrometheusRule`）、base 補 metrics 埠與 worker Service、用 `relabelings` 讓 `job` 標籤對上現有規則；非目標是 Grafana 儀表板、Alertmanager、Helm chart 與實機驗證 |
+| `add-kubernetes-monitoring-manifests` | 實作中（尚未封存） | `deploy/k8s/monitoring/`（`monitoring` namespace、兩個 `ServiceMonitor`、`PrometheusRule`）、base 的 metrics 埠與 metrics Service、用 `relabelings` 讓 `job` 標籤對上現有規則、`ApiDown` 與 `WorkerDown` 納入目標不存在；非目標是 Grafana 儀表板、Alertmanager、Helm chart 與實機驗證 |
 
 ## 解除阻塞需要什麼
 

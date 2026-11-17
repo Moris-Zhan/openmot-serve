@@ -56,9 +56,10 @@ def test_the_metrics_and_dashboard_items_are_ticked_with_their_limits_stated() -
     assert "not calibrated" in dashboard_text and "Alertmanager" in dashboard_text
 
 
-def test_the_kubernetes_monitoring_manifests_stay_an_open_roadmap_item() -> None:
-    _, done = _item("Kubernetes monitoring manifests")
-    assert not done
+def test_the_kubernetes_monitoring_manifests_are_ticked_and_say_they_are_not_verified_on_a_cluster() -> None:
+    text, done = _item("Kubernetes monitoring manifests")
+    assert done and "not verified on a live cluster" in text
+    assert "not verified on a live cluster" in _status()
 
 
 def test_the_layout_no_longer_calls_the_monitoring_folder_planned() -> None:
@@ -67,7 +68,7 @@ def test_the_layout_no_longer_calls_the_monitoring_folder_planned() -> None:
     assert (ROOT / "monitoring").is_dir()
 
 
-def test_the_architecture_heading_separates_the_compose_overlay_from_the_planned_manifests() -> None:
+def test_the_architecture_heading_says_the_kubernetes_monitoring_manifests_are_written_but_not_verified() -> None:
     heading = next(line for line in README.splitlines() if line.startswith("## Deployment architecture"))
-    assert "monitoring planned, v0.4" not in heading
-    assert "Kubernetes" in heading and "planned" in heading
+    assert "monitoring planned, v0.4" not in heading and "planned" not in heading
+    assert "Kubernetes monitoring manifests written" in heading and "not verified" in heading

@@ -29,6 +29,9 @@ spec:
           envFrom:
             - configMapRef:
                 name: openmot-config
+          ports:
+            - name: metrics
+              containerPort: 9102
           startupProbe:
             exec:
               command: ["python", "-m", "worker.healthcheck"]

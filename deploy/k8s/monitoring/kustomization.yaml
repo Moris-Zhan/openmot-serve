@@ -1,0 +1,11 @@
+# Applied on its own, after the Prometheus Operator is installed: these resources need its CRDs, so
+# they are deliberately not part of the workload overlay. No namespace transformer here: the custom
+# resources live in "monitoring" while they select Services in "openmot".
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - servicemonitor-api.yaml
+  - servicemonitor-worker.yaml
+  - prometheusrule.yaml

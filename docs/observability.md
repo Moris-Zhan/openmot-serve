@@ -66,8 +66,8 @@ docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up --build
 
 | 警報 | 條件 | 嚴重度 |
 |---|---|---|
-| `ApiDown` | api 的目標 `up == 0` 持續 1 分鐘 | critical |
-| `WorkerDown` | worker 的目標 `up == 0` 持續 1 分鐘 | critical |
+| `ApiDown` | api 的目標 `up == 0`，或目標不存在，持續 1 分鐘 | critical |
+| `WorkerDown` | worker 的目標 `up == 0`，或目標不存在，持續 1 分鐘 | critical |
 | `HighJobFailureRatio` | 過去 15 分鐘失敗的工作占（成功加失敗）超過 20%，且這段時間至少有 5 個工作；持續 5 分鐘 | warning |
 | `JobQueueBacklog` | 等待中的工作超過 10 個，持續 10 分鐘 | warning |
 | `HighApiErrorRatio` | 過去 5 分鐘 `5xx` 占全部請求超過 5%，且這段時間至少有 20 個請求；持續 5 分鐘 | warning |
@@ -75,6 +75,7 @@ docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up --build
 - **門檻是起始值**：這些數字沒有根據任何真實流量決定，未經真實流量校準，只是讓規則一開始就能運作的合理猜測。有了實際的流量與工作量之後，應該回頭調整規則檔裡的數字。
 - **最小量門檻**：失敗比例與錯誤比例都要求最少的工作數或請求數，避免只有一兩個工作時，一次失敗就讓比例變成 100% 而誤報。
 - **沒有通知**：沒有接 Alertmanager，也沒有任何通知管道（電子郵件、聊天訊息）。警報只會出現在 Prometheus 的介面，沒有人會被叫醒。
+- **目標不存在也會觸發**：`ApiDown` 與 `WorkerDown` 的條件是 `up == 0 or absent(up{job="…"})`。在 Kubernetes 上，Pod 不存在或因排程失敗而 Pending（例如沒有 GPU）時，Prometheus 根本沒有這個目標，也就沒有 `up` 序列，只靠 `up == 0` 抓不到；`absent()` 補上這個情況。Compose 的目標是寫死的，行為不變。
 - **沒有 worker 的堆疊**：在沒有 GPU 而只啟動 api 的堆疊上，`WorkerDown` 會觸發，這是預期的，不是錯誤。
 
 每條警報都有單元測試，證明條件成立時會觸發、不成立時不會觸發，並且包含「比例是 100% 但數量太少」的案例。在專案根目錄執行（需要 `promtool`，它在 Prometheus 的發行檔裡）：
@@ -113,5 +114,5 @@ promtool test rules monitoring/rules/openmot.rules.test.yml
 
 - **worker 指標沒有端到端證據**：worker 依規格在沒有 GPU 的環境拒絕啟動，所以 worker 的指標無法端到端驗證，只有程序內的測試（真實的指標伺服器加一次模擬的工作）。有 GPU 的環境可以用同一個 overlay 驗證。
 - **數值未經真實流量校準**：警報門檻與 dashboard 都是在沒有真實流量的情況下設計與驗證的，面板上的數字沒有在真實的流量與工作量下檢視過。
-- **Kubernetes 的監控清單不在範圍內**：這個變更只提供 compose overlay，ServiceMonitor 與 monitoring namespace 沒有做。
+- **Kubernetes 的監控清單未在叢集上驗證**：`deploy/k8s/monitoring/` 有 `ServiceMonitor`、`PrometheusRule` 與 `monitoring` namespace，只經過渲染、核心資源的 schema 檢查與結構測試，沒有證明 Prometheus 真的抓到資料（見 [`kubernetes.md`](kubernetes.md) 的「監控」一節）；Kubernetes 上沒有 Grafana dashboard 的載入方式。
 - **沒有 Alertmanager**：警報不會通知任何人。

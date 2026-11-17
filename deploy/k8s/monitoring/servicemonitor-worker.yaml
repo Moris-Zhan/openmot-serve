@@ -1,0 +1,23 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: worker-metrics
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - openmot
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker-metrics
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      relabelings:
+        # Keep the job name of the compose deployment so the alert rules and the dashboard match.
+        - action: replace
+          targetLabel: job
+          replacement: openmot-worker

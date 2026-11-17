@@ -71,6 +71,49 @@ tests:
         alertname: ApiDown
         exp_alerts: []
 
+  - name: an api target that does not exist at all alerts
+    interval: 1m
+    input_series:
+      - series: 'up{job="openmot-worker", instance="worker:9102"}'
+        values: "1x20"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ApiDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: openmot-api
+            exp_annotations:
+              summary: "The openmot api is down or its metrics port is not reachable."
+
+  - name: a worker target that does not exist at all alerts
+    interval: 1m
+    input_series:
+      - series: 'up{job="openmot-api", instance="api:9101"}'
+        values: "1x20"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: WorkerDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: openmot-worker
+            exp_annotations:
+              summary: "The openmot worker is down or its metrics port is not reachable."
+
+  - name: a target that is missing for less than a minute does not alert
+    interval: 1m
+    input_series:
+      - series: 'up{job="openmot-api", instance="api:9101"}'
+        values: "1x5 stale 1x14"
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: ApiDown
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: ApiDown
+        exp_alerts: []
+
   - name: a high share of failed jobs alerts
     interval: 1m
     input_series:

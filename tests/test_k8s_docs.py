@@ -95,6 +95,7 @@ SECTIONS_IN_ORDER = [
     "## 套用",
     "## 設定值",
     "## 儲存與資料保存",
+    "## 監控",
     "## 疑難排解",
     "## 外部叢集驗證手冊",
 ]
@@ -164,3 +165,42 @@ def test_the_external_runbook_covers_each_unverified_check_and_how_to_record_it(
         "pytest -m integration tests/test_k8s_e2e.py",
     ):
         assert expected in runbook, expected
+
+
+def _monitoring_section() -> str:
+    text = _text()
+    start = text.index("## 監控")
+    return text[start : text.index("## 疑難排解", start)]
+
+
+def test_the_monitoring_section_gives_the_apply_command_for_the_directory_that_exists() -> None:
+    assert "kubectl apply -k deploy/k8s/monitoring" in _monitoring_section()
+    assert (K3S_OVERLAY_DIR.parents[1] / "monitoring" / "kustomization.yaml").is_file()
+
+
+def test_the_monitoring_section_states_the_operator_prerequisite() -> None:
+    section = _monitoring_section()
+    assert "Prometheus Operator" in section and "servicemonitors.monitoring.coreos.com" in section
+
+
+def test_the_monitoring_section_explains_the_release_label_assumption_and_how_to_override_it() -> None:
+    section = _monitoring_section()
+    assert "release: monitoring" in section and "serviceMonitorSelector" in section
+    assert "kubectl get prometheus -A -o yaml" in section
+    assert "overlay" in section and "labels" in section
+
+
+def test_the_monitoring_section_says_how_to_check_the_targets() -> None:
+    section = _monitoring_section()
+    assert "Targets" in section and "job" in section and "openmot-api" in section and "openmot-worker" in section
+
+
+def test_the_monitoring_section_states_every_limit() -> None:
+    section = _monitoring_section()
+    assert "未在叢集上驗證" in section
+    assert "Grafana" in section and "Alertmanager" in section
+    assert "GPU" in section and "端到端" in section
+
+
+def test_the_worker_note_no_longer_claims_the_worker_is_behind_no_service() -> None:
+    assert "worker 不在任何 Service 後面" not in _text()

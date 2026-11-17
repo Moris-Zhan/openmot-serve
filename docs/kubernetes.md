@@ -122,7 +122,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://<節點 IP>:30080/health
 
 之後提交 Job、查詢與取回結果的方式與其他部署相同，見 `docs/service.md`，只是位址換成 `http://<節點 IP>:30080`。
 
-> worker 在處理長 Job 時，`kubectl get pods` 可能顯示 `0/1`（NotReady）：worker 使用 Celery solo pool，忙碌時無法回應健康檢查。這是預期行為，worker 不在任何 Service 後面，不影響流量；判斷是否正常看 Pod 沒有重啟，以及 Job 的狀態。
+> worker 在處理長 Job 時，`kubectl get pods` 可能顯示 `0/1`（NotReady）：worker 使用 Celery solo pool，忙碌時無法回應健康檢查。這是預期行為，worker 沒有對外的 Service（`worker-metrics` 只給 Prometheus 用，見「監控」一節），不影響流量；判斷是否正常看 Pod 沒有重啟，以及 Job 的狀態。
 
 ## 設定值
 
@@ -167,6 +167,67 @@ kubectl delete -k deploy/k8s/overlays/k3s-single-node
 ```
 
 `kubectl delete -k` 會刪除整個 Namespace，其中的 PVC 與 `local-path` 的 PV 也會被回收，全部 Job 資料就消失了。不要把它當成一般的重啟或復原手段。`local-path` 沒有備份機制，備份不在這個變更的範圍內。
+
+## 監控
+
+這一節說明如何讓叢集裡的 Prometheus 抓取 api 與 worker 的指標。清單在 `deploy/k8s/monitoring/`，與工作負載的 overlay 分開：它們需要 Prometheus Operator 的自訂資源定義（CRD），放進 overlay 會讓沒有 Operator 的叢集連工作負載都無法套用。
+
+### 前置條件
+
+叢集已安裝 Prometheus Operator 與 Prometheus（例如 `kube-prometheus-stack`），本專案不安裝它們。確認 CRD 存在：
+
+```shell
+kubectl get crd servicemonitors.monitoring.coreos.com prometheusrules.monitoring.coreos.com
+```
+
+### 套用
+
+先套用工作負載的 overlay（見「套用」），再單獨套用監控清單：
+
+```shell
+kubectl apply -k deploy/k8s/monitoring
+```
+
+套用工作負載 overlay 時，base 新增的指標埠與兩個 Service 會讓 api 滾動更新、worker 重建；worker 的策略是 `Recreate`，會中斷正在處理的 Job（Job 會重新投遞），請在 worker 閒置時套用。
+
+清單的內容：
+
+- `monitoring` namespace。
+- 兩個 `ServiceMonitor`（`api-metrics`、`worker-metrics`），放在 `monitoring` namespace，選取 `openmot` namespace 裡同名的 Service，以具名埠 `metrics` 抓取 `/metrics`，並把 `job` 標籤固定為 `openmot-api` 與 `openmot-worker`，讓警報規則與 Compose 的相同。
+- 一個 `PrometheusRule`，內容與 `monitoring/rules/openmot.rules.yml` 相同（測試保證兩者一致）。
+- 在 base 裡，`api-metrics` 與 `worker-metrics` 是只給 Prometheus 用的 ClusterIP Service，各只有一個 `metrics` 埠，並設 `publishNotReadyAddresses: true`，所以 worker 處理 Job 而 NotReady、或 api 因 Redis 不可用而 NotReady 時，目標仍在 endpoints 裡。對外的 `api` Service 沒有指標埠，k3s overlay 把它改成 NodePort 也不會發佈指標。
+
+### `release: monitoring` 的假設與覆寫
+
+`kube-prometheus-stack` 預設只選取帶有 `release: <Helm release 名稱>` 標籤的 `ServiceMonitor` 與 `PrometheusRule`。清單帶的 `release: monitoring` 是**假設** release 名稱就是 `monitoring`，沒有在叢集上驗證。核對 Prometheus 實際選取的條件：
+
+```shell
+kubectl get prometheus -A -o yaml
+```
+
+看 `serviceMonitorSelector`、`ruleSelector` 與對應的 namespace selector。release 名稱不同時，建立自己的 kustomize overlay 引用 `deploy/k8s/monitoring`，並以 `labels` 覆寫標籤（`includeSelectors: false` 讓 selector 不受影響）：
+
+```yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - <到 deploy/k8s/monitoring 的相對路徑>
+labels:
+  - pairs:
+      release: <你的 release 名稱>
+    includeSelectors: false
+```
+
+### 檢查目標
+
+在 Prometheus 的介面看 Status → Targets，應該有兩個目標，`job` 標籤分別是 `openmot-api` 與 `openmot-worker`，狀態為 `UP`。也可以查詢 `up{job=~"openmot-.*"}`。`ApiDown` 與 `WorkerDown` 在目標的 `up` 為 0 **或目標不存在**（Pod 不存在、或因沒有 GPU 而卡在 Pending）時都會觸發。
+
+### 限制
+
+- **未在叢集上驗證**：這些清單只經過渲染、核心資源的 schema 檢查與結構測試（selector 對得上 Service、埠名存在、`job` 與規則一致、`PrometheusRule` 與規則檔相同），沒有證明 Prometheus 真的抓到資料，也沒有驗證 `release: monitoring` 的假設、以及 Prometheus 的服務發現是否抓取 NotReady 的 Pod。實機驗證由 `verify-kubernetes-on-cluster` 承接。
+- **沒有 Grafana dashboard 的 Kubernetes 載入方式**：dashboard 只在 Compose 的 overlay 裡自動載入，載入方式取決於你的 Grafana 安裝。
+- **沒有 Alertmanager**：警報只出現在 Prometheus 的介面，沒有通知。
+- **worker 指標需要有 GPU 的叢集才能端到端驗證**：沒有 GPU 時 worker 維持 Pending，沒有 worker 指標可以抓。
 
 ## 疑難排解
 

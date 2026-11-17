@@ -2,7 +2,7 @@
 
 Multi-object tracking (MOT17/MOT20) as a production service: FastAPI + Docker + Kubernetes + CI/CD, evaluated with HOTA.
 
-> **Status: v0.2 done; v0.3 in progress — Kubernetes manifests are written but not yet verified on a live cluster; v0.4 CI and observability done — the CI workflow and the GHCR publish have run on GitHub; metrics, a Prometheus/Grafana compose overlay and alert rules are verified end to end except for the worker, which needs a GPU.** The tracking pipeline and benchmark (v0.1) are unchanged: `python -m eval.run` tunes on the MOT17 tuning half and reports HOTA / MOTA / IDF1 on the validation half (see [`docs/evaluation.md`](docs/evaluation.md)). On top of it, an HTTP API, a Celery GPU worker and a Docker Compose stack are working; see [`docs/service.md`](docs/service.md) for the API, the container deployment and the end-to-end results. The Kubernetes manifests (kustomize base and a k3s single-node overlay) are covered by render and schema tests only; no k3s cluster was available, so deployment, GPU scheduling and pod recovery are not yet verified. [`docs/kubernetes.md`](docs/kubernetes.md) has the prerequisites, the deploy steps and a runbook for verifying them on an external cluster. The GitHub Actions workflow (lint, tests and an api image build on every push) has been run on GitHub-hosted runners and passes; publishing the images to GHCR from `main` has run once successfully (the push is confirmed in the job log; the images have not been pulled back yet). [`docs/ci.md`](docs/ci.md) describes the jobs and how to reproduce them locally. [`docs/observability.md`](docs/observability.md) describes the metrics, the Prometheus and Grafana compose overlay and the alert rules. The worker's metrics have only been tested in-process (the worker needs a GPU, which was not available), the alert thresholds and the dashboard are not calibrated against real traffic, and Kubernetes monitoring manifests are not included. Design decisions live in [`docs/adr/`](docs/adr/); domain terms are defined in [`CONTEXT.md`](CONTEXT.md).
+> **Status: v0.2 done; v0.3 in progress — Kubernetes manifests are written but not yet verified on a live cluster; v0.4 CI and observability done — the CI workflow and the GHCR publish have run on GitHub; metrics, a Prometheus/Grafana compose overlay and alert rules are verified end to end except for the worker, which needs a GPU.** The tracking pipeline and benchmark (v0.1) are unchanged: `python -m eval.run` tunes on the MOT17 tuning half and reports HOTA / MOTA / IDF1 on the validation half (see [`docs/evaluation.md`](docs/evaluation.md)). On top of it, an HTTP API, a Celery GPU worker and a Docker Compose stack are working; see [`docs/service.md`](docs/service.md) for the API, the container deployment and the end-to-end results. The Kubernetes manifests (kustomize base and a k3s single-node overlay) are covered by render and schema tests only; no k3s cluster was available, so deployment, GPU scheduling and pod recovery are not yet verified. [`docs/kubernetes.md`](docs/kubernetes.md) has the prerequisites, the deploy steps and a runbook for verifying them on an external cluster. The GitHub Actions workflow (lint, tests and an api image build on every push) has been run on GitHub-hosted runners and passes; publishing the images to GHCR from `main` has run once successfully (the push is confirmed in the job log; the images have not been pulled back yet). [`docs/ci.md`](docs/ci.md) describes the jobs and how to reproduce them locally. [`docs/observability.md`](docs/observability.md) describes the metrics, the Prometheus and Grafana compose overlay and the alert rules. The worker's metrics have only been tested in-process (the worker needs a GPU, which was not available), the alert thresholds and the dashboard are not calibrated against real traffic, and the Kubernetes monitoring manifests (ServiceMonitor, PrometheusRule) are covered by render and structure tests only, not verified on a live cluster. Design decisions live in [`docs/adr/`](docs/adr/); domain terms are defined in [`CONTEXT.md`](CONTEXT.md).
 
 ## What this project demonstrates
 
@@ -43,7 +43,7 @@ sequenceDiagram
     A-->>C: tracks
 ```
 
-## Deployment architecture _(v0.3 manifests written, not yet verified; Kubernetes monitoring planned)_
+## Deployment architecture _(v0.3 manifests written, not yet verified; Kubernetes monitoring manifests written, not verified on a cluster)_
 
 ```mermaid
 flowchart LR
@@ -54,7 +54,7 @@ flowchart LR
             API --- PV[(PersistentVolumeClaim)]
             WORKER --- PV
         end
-        subgraph mon [namespace: monitoring - planned, manifests not written]
+        subgraph mon [namespace: monitoring - manifests written, not verified]
             PROM[Prometheus] --> GRAF[Grafana]
         end
         GPUPLUGIN[NVIDIA device plugin<br/>assumed installed] -.advertises GPU.-> WORKER
@@ -72,7 +72,7 @@ flowchart LR
 | Tracker | ByteTrack | MIT |
 | Storage | Kubernetes PersistentVolumeClaim (k3s `local-path`, single node) | S3-compatible storage later |
 | Orchestration | k3s single node + NVIDIA device plugin | GPU Operator is not managed here; target GPU: RTX 5090 (CUDA 12.8+) |
-| Monitoring | Prometheus + Grafana | Latency, throughput, job failures; compose overlay, Kubernetes manifests planned |
+| Monitoring | Prometheus + Grafana | Latency, throughput, job failures; compose overlay; Kubernetes manifests written, not verified on a cluster |
 | CI | GitHub Actions | Lint, test, build image |
 
 ## API
@@ -161,7 +161,7 @@ COCO 預訓練權重，未針對 MOT17 微調；數字不可與 ByteTrack 論文
 - [x] Publish the api and worker images to GHCR from `main` (ran once on `main`; push confirmed in the job log)
 - [x] Prometheus metrics: request latency, job duration, throughput, failures, queue depth (api metrics verified end to end; worker metrics tested in-process only, no GPU available)
 - [x] Grafana dashboard and alert rules (compose overlay, rules unit-tested with promtool; thresholds not calibrated against real traffic, no Alertmanager)
-- [ ] Kubernetes monitoring manifests (ServiceMonitor, monitoring namespace)
+- [x] Kubernetes monitoring manifests (ServiceMonitor, monitoring namespace; manifests, render and structure tests only; not verified on a live cluster)
 
 ### v0.5 — Inference optimization
 - [x] Latency and throughput baseline for the detector (`python -m eval.latency`; PyTorch FP16 on an RTX 5090: 11.2 ms inference, 18.3 ms end to end, about 55 FPS — see [`docs/evaluation.md`](docs/evaluation.md))

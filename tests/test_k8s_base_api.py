@@ -19,9 +19,9 @@ def _container() -> dict:
     return containers[0]
 
 
-def test_the_api_serves_on_port_8000() -> None:
+def test_the_api_serves_on_port_8000_and_exposes_metrics_on_its_own_port() -> None:
     ports = {port["name"]: port["containerPort"] for port in _container()["ports"]}
-    assert ports == {"http": 8000}
+    assert ports == {"http": 8000, "metrics": 9101}
 
 
 def test_the_api_reads_the_generated_config() -> None:
