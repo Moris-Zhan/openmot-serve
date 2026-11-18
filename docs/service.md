@@ -271,8 +271,8 @@ compose 已替 api 與 worker 設好儲存目錄、Redis 位址與權重路徑�
 | `OPENMOT_STORAGE_DIR` | compose 設為 `/data/storage` | api、worker | 序列與結果的根目錄，必須是絕對路徑，必填 |
 | `OPENMOT_REDIS_URL` | compose 設為 `redis://redis:6379/0` | api、worker | Job Status 與佇列所在的 Redis |
 | `OPENMOT_WEIGHTS` | compose 設為 `/models/yolox_x.pth` | worker | 權重路徑，載入時驗證 SHA-256 |
-| `OPENMOT_PRECISION` | `fp16` | worker | 推論精度，`fp16` 或 `fp32` |
-| `OPENMOT_BACKEND` | `torch` | worker | 偵測後端：`torch`、`onnx` 或 `tensorrt`；與 `OPENMOT_PRECISION` 的組合要合法（`onnx` 只支援 `fp32`，`tensorrt` 只支援 `fp16`），不會由後端推斷精度 |
+| `OPENMOT_PRECISION` | `fp16` | worker | 推論精度：`torch` 為 `fp16` 或 `fp32`，`onnx` 為 `fp32`，`tensorrt` 為 `fp16` 或 `int8`；TensorRT 的 compose override 以同一個變數指定 |
+| `OPENMOT_BACKEND` | `torch` | worker | 偵測後端：`torch`、`onnx` 或 `tensorrt`；與 `OPENMOT_PRECISION` 的組合要合法（`onnx` 只支援 `fp32`，`tensorrt` 支援 `fp16` 或 `int8`），不會由後端推斷精度 |
 | `OPENMOT_ENGINE` | 未設定 | worker | `onnx` 或 `tensorrt` 後端使用的 ONNX／engine 檔的絕對路徑；和 `torch` 後端同時設定會啟動失敗 |
 | `OPENMOT_MAX_UPLOAD_BYTES` | 1 GiB | api | 上傳 zip 的大小上限 |
 | `OPENMOT_MAX_UNPACKED_BYTES` | 4 GiB | api | 解壓後總量上限，不可小於上傳上限 |
@@ -320,6 +320,19 @@ Compose 層級的變數：`OPENMOT_API_PORT`（對外埠，預設 8000）、`OPE
    ```
 
    用 `docker compose $STACK logs worker` 查看；預設的 `torch` 後端印 `detector: backend=torch precision=fp16`，沒有路徑。Job 的 `result.meta.json` 在非 `torch` 後端時多一個 `"backend": "tensorrt"`，`torch` 的內容與以前逐位元組相同。
+
+**以 INT8 engine 服務。** INT8 engine 要先依 [`docs/evaluation.md`](evaluation.md) 的「INT8 量化」用 `python -m inference.build_engine --precision int8` 建好；它需要 MOT17 的校準影格，所以在有資料的環境建，不在映像內建。把 engine 與同名的 `.json` sidecar 放進 `openmot-engines` 卷，再以環境變數指定精度與檔名：
+
+```bash
+export OPENMOT_PRECISION=int8
+export OPENMOT_ENGINE_FILE=<INT8 engine 檔名，以 -int8.engine 結尾>
+docker compose $STACK up -d --build
+```
+
+- 未設定 `OPENMOT_PRECISION` 時仍是 `fp16`，渲染出的設定與以前相同。
+- 精度必須與 engine 的 sidecar 一致：未指定精度卻掛載 INT8 engine（或相反）時，worker 在處理任何 Job 之前就啟動失敗，訊息指名精度不符。
+- 映像要用目前的程式碼重建，所以用 `up -d --build`：在 INT8 支援加入之前建的 `openmot-worker:tensorrt` 映像裡，`tracking.run` 只接受 `fp16` 與 `fp32`，worker 也會拒絕 `int8`。
+- 這只說明 INT8 engine 可以被服務，不是建議：它的合併 HOTA 比 PyTorch FP16 低 1.51，標為「不建議」，見 `docs/evaluation.md`。端對端驗證的結果見下面的「驗證」。
 
 何時要重建 engine：權重檔、TensorRT 版本（升級映像）或 GPU 型號改變時。worker 載入時會比對 engine 旁邊的 sidecar，不符就啟動失敗並指名不符的項目與重建指令，不會處理任何 Job。
 
@@ -376,3 +389,18 @@ python -m pytest -m "integration or gpu" tests/test_tensorrt_worker_e2e.py -s
 - TensorRT worker 處理該 Job 從提交到 `succeeded` 約 2.3 秒；它的 Result 與中繼檔和同一映像、同一 engine 的 `python -m tracking.run --backend tensorrt --engine …` 逐位元組相同，中繼檔含 `"backend": "tensorrt"`。
 - `OPENMOT_ENGINE_FILE` 指向不存在的檔案時 worker 啟動失敗，錯誤訊息指名該檔案。
 - 在預設映像設 `OPENMOT_BACKEND=tensorrt` 時 worker 以結束碼 1 退出，訊息指出缺少 `tensorrt-cu12` 與 `pip install "openmot-serve[export]"`。這項測試曾揭露舊訊息誤報成「tensorrt_version mismatch，請重建」，已在 `inference/backends.py` 修正。
+
+INT8 另有一份端對端測試：
+
+```shell
+python -m pytest -m "integration or gpu" tests/test_tensorrt_int8_worker_e2e.py -s
+```
+
+它用 host 的 `models/engines/` 裡已建好的 INT8 engine 與 sidecar（沒有就 skip 並印出建置指令），以 tar 串流複製進專屬的卷，名稱一律以 `openmot-trt-e2e-int8` 開頭（compose 專案 `openmot-trt-e2e-int8`、埠 18002，可用 `OPENMOT_TRT_E2E_INT8_API_PORT` 改），`openmot-weights` 只以唯讀使用，結束後只清除這些名稱的資源。每次先 `docker compose build worker` 更新映像，靠快取很快。實測結果（RTX 5090、TensorRT 10.13.3.9、MOT17-09 前 60 張影格）：
+
+- 同一個 INT8 engine 以命令列連續執行 3 次，Result 與中繼檔逐位元組相同。
+- TensorRT worker 以 `OPENMOT_PRECISION=int8` 處理該 Job 從提交到 `succeeded` 約 2.3 秒；Result 與中繼檔和同一映像、同一 engine 的 `python -m tracking.run --backend tensorrt --precision int8 --engine …` 逐位元組相同，中繼檔記錄 `"backend": "tensorrt"` 與 `"precision": "int8"`，日誌是 `detector: backend=tensorrt precision=int8 engine=/models/engines/<engine 檔名>`。
+- 未指定精度（預設 `fp16`）卻掛載 INT8 engine 時，worker 在處理任何 Job 之前結束，訊息指名精度不符。
+- 驗證時發現舊的 `openmot-worker:tensorrt` 映像是在 INT8 支援之前建的，裡面的程式碼拒絕 `int8`，重建之後才通過；這就是上面要用 `--build` 的原因。
+
+限制：只驗證一個 Job、一個 engine（host 上建好再複製進卷，沒有在映像內重建 INT8 engine）；Kubernetes 仍然沒有 TensorRT 映像。

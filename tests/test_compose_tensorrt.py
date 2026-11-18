@@ -47,7 +47,7 @@ def test_the_worker_builds_the_tensorrt_target_and_selects_the_backend() -> None
     assert worker["build"]["target"] == "tensorrt"
     assert worker["image"] == "openmot-worker:tensorrt"
     assert worker["environment"]["OPENMOT_BACKEND"] == "tensorrt"
-    assert worker["environment"]["OPENMOT_PRECISION"] == "fp16"
+    assert worker["environment"]["OPENMOT_PRECISION"] == "${OPENMOT_PRECISION:-fp16}"
     engine = worker["environment"]["OPENMOT_ENGINE"]
     assert engine.startswith("/models/engines/${OPENMOT_ENGINE_FILE:?")
 

@@ -1,6 +1,8 @@
 import argparse
 import json
 import platform
+import re
+import subprocess
 import sys
 import time
 from collections.abc import Callable, Sequence
@@ -43,6 +45,26 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SEQUENCES = tuple(f"MOT17-{number}-FRCNN" for number in ("02", "04", "05", "09", "10", "11", "13"))
 DEFAULT_WARMUP = 50
 DEFAULT_MEASURED = 500
+NVIDIA_SMI_TIMEOUT_SECONDS = 10
+
+
+def read_gpu_memory_mib(
+    device: str, run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run
+) -> int | None:
+    matched = re.fullmatch(r"cuda(?::(\d+))?", device)
+    if matched is None:
+        return None
+    command = [
+        "nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits", "-i", matched.group(1) or "0",
+    ]  # fmt: skip
+    try:
+        completed = run(command, capture_output=True, text=True, timeout=NVIDIA_SMI_TIMEOUT_SECONDS)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    lines = completed.stdout.split("\n") if completed.returncode == 0 else []
+    reading = lines[0].strip() if lines and not any(line.strip() for line in lines[1:]) else ""
+    return int(reading) if reading.isdecimal() else None
+
 
 class StagedLoader(Protocol):
     def __call__(
@@ -151,11 +173,31 @@ def load_frames(paths: Sequence[Path]) -> list[np.ndarray]:
 
 
 @dataclass(frozen=True)
+class GpuMemory:
+    before_load_mib: int
+    after_load_mib: int
+    after_run_mib: int
+
+    @property
+    def load_delta_mib(self) -> int:
+        return self.after_load_mib - self.before_load_mib
+
+    @property
+    def run_delta_mib(self) -> int:
+        return self.after_run_mib - self.before_load_mib
+
+
+def _no_gpu_memory(device: str) -> int | None:
+    return None
+
+
+@dataclass(frozen=True)
 class Dependencies:
     check_environment: Callable[[], CheckOutcome]
     load_staged: StagedLoader
     clock: Callable[[], float] = time.perf_counter
     resolve_artifact: ArtifactResolver = resolve_backend_artifact
+    read_gpu_memory: Callable[[str], int | None] = _no_gpu_memory
 
 
 @dataclass(frozen=True)
@@ -189,6 +231,7 @@ def default_dependencies() -> Dependencies:
     return Dependencies(
         check_environment=lambda: run_env_check(EnvProbe(read_torch_report, torch_gpu_matches_cpu)),
         load_staged=_load_staged,
+        read_gpu_memory=read_gpu_memory_mib,
     )
 
 
@@ -206,12 +249,33 @@ def _stats_document(stats: LatencyStats) -> dict[str, float]:
     return {"median_ms": stats.median_ms, "p95_ms": stats.p95_ms}
 
 
+GPU_MEMORY_METHOD = (
+    "nvidia-smi memory.used，整張 GPU 的已用量（含本程序的 CUDA context 與配置器快取，不是模型權重的大小）；"
+    "載入前的讀數在本程序使用 CUDA 之前取得，只取三個時間點，不含瞬間峰值"
+)
+
+
+def _gpu_memory_document(memory: GpuMemory | None) -> dict[str, object]:
+    if memory is None:
+        return {"available": False}
+    return {
+        "available": True,
+        "used_before_load_mib": memory.before_load_mib,
+        "used_after_load_mib": memory.after_load_mib,
+        "used_after_run_mib": memory.after_run_mib,
+        "load_delta_mib": memory.load_delta_mib,
+        "run_delta_mib": memory.run_delta_mib,
+        "method": GPU_MEMORY_METHOD,
+    }
+
+
 def _result_document(
     config: LatencyConfig,
     settings: DetectorSettings,
     result: LatencyResult,
     outcome: CheckOutcome,
     artifact: dict[str, object] | None = None,
+    memory: GpuMemory | None = None,
 ) -> dict[str, object]:
     environment = outcome.report
     document = {
@@ -235,11 +299,12 @@ def _result_document(
             "end_to_end": _stats_document(result.end_to_end),
             "throughput_fps": result.throughput_fps,
         },
+        "gpu_memory": _gpu_memory_document(memory),
     }
     return document if artifact is None else {**document, "artifact": artifact}
 
 
-def _markdown_table(result: LatencyResult) -> str:
+def _markdown_table(result: LatencyResult, memory: GpuMemory | None = None) -> str:
     def row(label: str, stats: LatencyStats) -> str:
         return f"| {label} | {stats.median_ms:.2f} | {stats.p95_ms:.2f} |"
 
@@ -251,6 +316,10 @@ def _markdown_table(result: LatencyResult) -> str:
         "",
         f"吞吐（單串流、batch 1）：{result.throughput_fps:.1f} FPS",
     ]
+    if memory is not None:
+        lines.append(
+            f"GPU 記憶體增量（整張 GPU 已用量，載入後／量測後）：{memory.load_delta_mib} / {memory.run_delta_mib} MiB"
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -265,6 +334,7 @@ def execute(config: LatencyConfig, dependencies: Dependencies) -> str:
             f"MOT17 sequences not found under {config.data_root}: {', '.join(missing)}. "
             "Run data/download_mot.sh to download them."
         )
+    before_load = dependencies.read_gpu_memory(config.device)
     outcome = dependencies.check_environment()
     if not outcome.passed:
         raise LatencyError("environment check failed:\n" + format_outcome(outcome))
@@ -282,12 +352,16 @@ def execute(config: LatencyConfig, dependencies: Dependencies) -> str:
         config.backend,
         artifact.path if artifact is not None else None,
     )
+    after_load = dependencies.read_gpu_memory(config.device)
     result = measure_latency(staged, frames, config.warmup, config.measured, dependencies.clock)
+    after_run = dependencies.read_gpu_memory(config.device)
+    readings = (before_load, after_load, after_run)
+    memory = None if any(reading is None for reading in readings) else GpuMemory(*readings)  # type: ignore[arg-type]
 
     config.result_dir.mkdir(parents=True)
-    document = _result_document(config, settings, result, outcome, describe_artifact(config.backend, artifact))
+    document = _result_document(config, settings, result, outcome, describe_artifact(config.backend, artifact), memory)
     write_text_atomic(config.result_dir / "latency.json", json.dumps(document, indent=2, sort_keys=True) + "\n")
-    table = _markdown_table(result)
+    table = _markdown_table(result, memory)
     write_text_atomic(config.result_dir / "latency.md", table)
     return table
 

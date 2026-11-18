@@ -1,6 +1,8 @@
 # Run the worker on a TensorRT engine. Stack it on the base file and the weights volume file:
 #   docker compose -f docker-compose.yml -f docker-compose.weights-volume.yml -f docker-compose.tensorrt.yml up -d
 # The engines live in an existing named volume (docker volume create openmot-engines).
+# The precision defaults to fp16; set OPENMOT_PRECISION=int8 to serve an INT8 engine. The engine's sidecar must
+# record the same precision, otherwise the worker refuses to start.
 services:
   worker:
     build:
@@ -8,7 +10,7 @@ services:
     image: openmot-worker:tensorrt
     environment:
       OPENMOT_BACKEND: tensorrt
-      OPENMOT_PRECISION: fp16
+      OPENMOT_PRECISION: ${OPENMOT_PRECISION:-fp16}
       OPENMOT_ENGINE: /models/engines/${OPENMOT_ENGINE_FILE:?set OPENMOT_ENGINE_FILE to the engine file name inside the engines volume}
     volumes:
       - type: volume
