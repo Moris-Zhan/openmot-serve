@@ -69,6 +69,14 @@
 
 `docs/evaluation.md` 的 INT8 一節現在寫著「服務端對端未驗證」「GPU 記憶體未量測」，`tests/test_int8_docs.py` 斷言了這些字樣。事實改變後，文件與測試一起更新：這是這個變更該做的，不是為了過測試而改。新的數字由文件測試對照記錄的結果檔驗證（沿用 `test_int8_docs.py` 的做法，結果檔不在時 skip）。
 
+### D8：映像內的 engine 建置不能依賴 `eval` 套件（驗證時發現，納入這個變更）
+
+為了讓 INT8 端對端測試用目前的程式碼，測試重建了 `openmot-worker:tensorrt`，才發現映像內 `python -m inference.build_engine` 在 import 階段就失敗：`inference/calibration.py` 的 `from eval.split import split_sequence`，而 `worker.Dockerfile` 只 `COPY` 了 `tracking`、`inference`、`jobs`、`metrics`、`app`、`worker`，沒有 `eval`（`pyproject.toml` 的打包清單有，Dockerfile 沒有）。這是上一個 INT8 變更引入的，連 FP16 的建置都受影響，既有的 FP16 端對端測試因此在 fixture 就失敗；現有規格本來就要求映像內含建置 engine 所需的程式，所以這是違反既有規格，不需要新需求。
+
+決定：把匯入延後到 `_tuning_pool` 內（只有真的要選校準影格時才需要 `eval.split`）。映像內建 INT8 engine 本來就不支援，因為校準需要 MOT17 影格，所以行為不變，也不改 Dockerfile 與映像內容。並加兩個回歸測試：封鎖 `eval` 後仍可 import 建置模組；掃描會進映像的套件的專案內匯入，都被 Dockerfile 的 `COPY` 涵蓋，這樣下次有人從映像內的程式碼匯入映像沒有的套件時，在單元測試就會被擋下，不必等到重建映像。
+
+替代方案：在 Dockerfile 加 `COPY eval ./eval`——會把含 TrackEval vendor 的整個套件放進 worker 映像，映像變大且內容的規格邊界要重新確認；而且只修這一個匯入，不防止同類問題。
+
 ## Risks / Trade-offs
 
 - **GPU 上有其他程序** → 記錄載入前的讀數；量測前用 `nvidia-smi` 確認閒置；文件註明只在閒置的 GPU 上有意義。

@@ -32,11 +32,18 @@
 - [x] 5.2 更新文件：README 的結果表（補 PyTorch FP16 一列、三列填入記憶體、移除兩個 TBD 與「未量測」、延遲欄沿用記錄的數字）與 v0.5 路線圖的敘述；`docs/service.md` 修正精度敘述並補上以 INT8 服務的啟動方式與驗證結果；`docs/evaluation.md` 的 INT8 一節更新為實測結果，並列出剩下的限制（記憶體是整張 GPU 的三個時間點讀數、只驗證 host 建的 engine、k8s 沒有 TensorRT 映像）。驗證：5.1 的測試通過，文件中沒有與事實矛盾的舊敘述。
 - [x] 5.3 確認 `tests/test_latency_docs.py`、`tests/test_service_docs.py`、`tests/test_readme_*.py` 在文件更新後仍通過；有因事實改變而必須更新的斷言才改，並在驗證紀錄說明。驗證：這些測試全部通過。
 
-## 6. 收尾
+## 6. 修正映像內 engine 建置的匯入
 
-- [x] 6.1 `pytest` 預設全部通過（沒有新的 skip 以外的失敗）、`ruff check` 與 `ruff format --check` 乾淨、`openspec validate verify-int8-serving-and-gpu-memory --strict` 通過。驗證：貼出各指令的結尾輸出。
-- [ ] 6.2 `gpu` 與 `integration` 測試在這台機器通過：`pytest -m "integration or gpu" tests/test_tensorrt_int8_worker_e2e.py tests/test_latency_memory_gpu.py -s`；既有的 `tests/test_tensorrt_worker_e2e.py` 不受影響（同樣的指令加上它）。驗證：貼出輸出。
-- [ ] 6.3 驗證紀錄逐項寫明「已驗證」與「沒驗證」（尤其：映像內重建 INT8 engine、k8s、記憶體峰值、GPU 上有其他程序時的數字）。驗證：文件與最後的回報一致。
+這一組是在驗證時發現並經使用者決定納入的：worker 映像裡沒有 `eval` 套件，但 `inference/calibration.py` 在 import 階段就匯入 `eval.split`，使映像內的 `python -m inference.build_engine` 連 FP16 都失敗（design D8）。
+
+- [x] 6.1 先寫失敗的測試 `tests/test_image_imports.py`：(a) 在子行程中封鎖 `eval` 套件（把 `sys.modules["eval"]` 設為 `None`）後，仍可 import `inference.build_engine` 與 `inference.calibration`；(b) 以 `ast` 掃描會進 worker 映像的套件（`tracking`、`inference`、`jobs`、`metrics`、`app`、`worker`）的所有 import，凡是匯入專案內其他頂層套件的，該套件必須被 `deploy/docker/worker.Dockerfile` 的 `COPY` 涵蓋。驗證：兩個測試因 `inference/calibration.py` 匯入 `eval.split` 而失敗，且失敗訊息指名 `eval`。
+- [x] 6.2 修正：`inference/calibration.py` 把 `from eval.split import split_sequence` 移到 `_tuning_pool` 內才匯入。映像內建 INT8 engine 本來就不支援（需要 MOT17 與 `eval`），行為不變。驗證：6.1 的測試通過，既有的校準與 INT8 建置測試（`tests/test_calibration_selection.py`、`tests/test_build_engine_int8.py`、`tests/test_int8_calibrator.py`）不需修改就通過，ruff 乾淨。
+
+## 7. 收尾
+
+- [x] 7.1 `pytest` 預設全部通過（沒有新的 skip 以外的失敗）、`ruff check` 與 `ruff format --check` 乾淨、`openspec validate verify-int8-serving-and-gpu-memory --strict` 通過。驗證：貼出各指令的結尾輸出。
+- [ ] 7.2 `gpu` 與 `integration` 測試在這台機器通過：`pytest -m "integration or gpu" tests/test_tensorrt_int8_worker_e2e.py tests/test_latency_memory_gpu.py -s`；既有的 `tests/test_tensorrt_worker_e2e.py` 不受影響（同樣的指令加上它）。驗證：貼出輸出。
+- [ ] 7.3 驗證紀錄逐項寫明「已驗證」與「沒驗證」（尤其：映像內重建 INT8 engine、k8s、記憶體峰值、GPU 上有其他程序時的數字）。驗證：文件與最後的回報一致。
 
 ## Workflow follow-up
 

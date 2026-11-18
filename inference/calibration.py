@@ -3,7 +3,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from eval.split import split_sequence
 from tracking.sequence import SequenceError, list_frames
 
 CALIBRATION_SEQUENCES = tuple(f"MOT17-{number}-FRCNN" for number in ("02", "04", "05", "09", "10", "11", "13"))
@@ -23,6 +22,8 @@ class CalibrationSelection:
 
 
 def _tuning_pool(data_root: Path, sequences: Sequence[str]) -> list[Path]:
+    from eval.split import split_sequence  # the worker image has no eval package; only selecting frames needs it
+
     pool: list[Path] = []
     for name in sorted(sequences):
         try:
