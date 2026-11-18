@@ -2,18 +2,18 @@
 
 Multi-object tracking (MOT17/MOT20) as a production service: FastAPI + Docker + Kubernetes + CI/CD, evaluated with HOTA.
 
-> **Status: v0.2 done; v0.3 in progress — Kubernetes manifests are written but not yet verified on a live cluster; v0.4 CI and observability done — the CI workflow and the GHCR publish have run on GitHub; metrics, a Prometheus/Grafana compose overlay and alert rules are verified end to end except for the worker, which needs a GPU.** The tracking pipeline and benchmark (v0.1) are unchanged: `python -m eval.run` tunes on the MOT17 tuning half and reports HOTA / MOTA / IDF1 on the validation half (see [`docs/evaluation.md`](docs/evaluation.md)). On top of it, an HTTP API, a Celery GPU worker and a Docker Compose stack are working; see [`docs/service.md`](docs/service.md) for the API, the container deployment and the end-to-end results. The Kubernetes manifests (kustomize base and a k3s single-node overlay) are covered by render and schema tests only; no k3s cluster was available, so deployment, GPU scheduling and pod recovery are not yet verified. [`docs/kubernetes.md`](docs/kubernetes.md) has the prerequisites, the deploy steps and a runbook for verifying them on an external cluster. The GitHub Actions workflow (lint, tests and an api image build on every push) has been run on GitHub-hosted runners and passes; publishing the images to GHCR from `main` has run once successfully (the push is confirmed in the job log; the images have not been pulled back yet). [`docs/ci.md`](docs/ci.md) describes the jobs and how to reproduce them locally. [`docs/observability.md`](docs/observability.md) describes the metrics, the Prometheus and Grafana compose overlay and the alert rules. The worker's metrics have only been tested in-process (the worker needs a GPU, which was not available), the alert thresholds and the dashboard are not calibrated against real traffic, and the Kubernetes monitoring manifests (ServiceMonitor, PrometheusRule) are covered by render and structure tests only, not verified on a live cluster. Design decisions live in [`docs/adr/`](docs/adr/); domain terms are defined in [`CONTEXT.md`](CONTEXT.md).
+> **Status: v0.2 done; v0.3 in progress — Kubernetes manifests are written but not yet verified on a live cluster; v0.4 CI and observability done — the CI workflow and the GHCR publish have run on GitHub; metrics, a Prometheus/Grafana compose overlay and alert rules are verified end to end except for the worker, which needs a GPU; v0.5 inference optimization done — the detector also runs on ONNX Runtime and TensorRT, and INT8 quantization is measured but not recommended (HOTA 1.51 below FP16), with serving INT8 through the worker unverified.** The tracking pipeline and benchmark (v0.1) are unchanged: `python -m eval.run` tunes on the MOT17 tuning half and reports HOTA / MOTA / IDF1 on the validation half (see [`docs/evaluation.md`](docs/evaluation.md)). On top of it, an HTTP API, a Celery GPU worker and a Docker Compose stack are working; see [`docs/service.md`](docs/service.md) for the API, the container deployment and the end-to-end results. The Kubernetes manifests (kustomize base and a k3s single-node overlay) are covered by render and schema tests only; no k3s cluster was available, so deployment, GPU scheduling and pod recovery are not yet verified. [`docs/kubernetes.md`](docs/kubernetes.md) has the prerequisites, the deploy steps and a runbook for verifying them on an external cluster. The GitHub Actions workflow (lint, tests and an api image build on every push) has been run on GitHub-hosted runners and passes; publishing the images to GHCR from `main` has run once successfully (the push is confirmed in the job log; the images have not been pulled back yet). [`docs/ci.md`](docs/ci.md) describes the jobs and how to reproduce them locally. [`docs/observability.md`](docs/observability.md) describes the metrics, the Prometheus and Grafana compose overlay and the alert rules. The worker's metrics have only been tested in-process (the worker needs a GPU, which was not available), the alert thresholds and the dashboard are not calibrated against real traffic, and the Kubernetes monitoring manifests (ServiceMonitor, PrometheusRule) are covered by render and structure tests only, not verified on a live cluster. The worker picks its detector backend with `OPENMOT_BACKEND` (`torch`, `onnx` or `tensorrt`); engines are built and compared with `inference/` and `eval.latency`, and [`docs/evaluation.md`](docs/evaluation.md) has the before/after numbers. The TensorRT worker image exists in Docker Compose only; the Kubernetes manifests run the PyTorch backend. Design decisions live in [`docs/adr/`](docs/adr/); domain terms are defined in [`CONTEXT.md`](CONTEXT.md).
 
 ## What this project demonstrates
 
-| Area | Evidence (when complete) |
+| Area | Evidence |
 |---|---|
 | Reproducible evaluation | HOTA / MOTA / IDF1 on the MOT17 validation half, re-runnable with one command |
 | Model serving | Async tracking-job API with FastAPI, Celery and Redis |
 | Containers & Kubernetes | Docker images and k3s manifests with NVIDIA GPU scheduling |
 | CI/CD | GitHub Actions: lint, test and build an image on every push |
 | Observability | Prometheus metrics and Grafana dashboards for latency, throughput and job failures |
-| Inference optimization | Detector INT8 quantization with before/after latency and HOTA |
+| Inference optimization | PyTorch, ONNX and TensorRT backends; INT8 quantization with before/after latency and HOTA (measured, judged not recommended) |
 | Engineering judgement | Detector chosen for license compatibility ([ADR-0001](docs/adr/0001-detector-yolox-for-license.md)) |
 
 ## How it works
@@ -69,6 +69,7 @@ flowchart LR
 | API | FastAPI | Async job submission and polling |
 | Queue | Celery + Redis | One job per sequence |
 | Detector | YOLOX, pretrained COCO weights | Apache-2.0, see ADR-0001 |
+| Inference backend | PyTorch (default), ONNX Runtime, TensorRT | `OPENMOT_BACKEND` and `OPENMOT_PRECISION`; the TensorRT worker image is Compose only, Kubernetes uses PyTorch |
 | Tracker | ByteTrack | MIT |
 | Storage | Kubernetes PersistentVolumeClaim (k3s `local-path`, single node) | S3-compatible storage later |
 | Orchestration | k3s single node + NVIDIA device plugin | GPU Operator is not managed here; target GPU: RTX 5090 (CUDA 12.8+) |
@@ -94,14 +95,19 @@ openmot-serve/
 ├── jobs/         # Job records, state machine, Redis store, settings, storage layout
 ├── worker/       # Celery worker: job processing, startup checks, healthcheck
 ├── tracking/     # Detection (YOLOX) + tracking (ByteTrack) pipeline
-├── eval/         # TrackEval benchmark runs on the MOT17 validation half
+├── inference/    # ONNX export, TensorRT engine build, INT8 calibration, backend loading
+├── eval/         # TrackEval benchmark runs on the MOT17 validation half, latency measurement
+├── metrics/      # Prometheus metric definitions and the metrics HTTP server
 ├── deploy/
 │   ├── docker/   # Dockerfiles, docker-compose
 │   └── k8s/      # kustomize base + k3s single-node overlay
 ├── .github/workflows/  # CI: lint, test, api image build, publish from main
 ├── monitoring/   # Prometheus config and alert rules, Grafana dashboard (compose overlay)
 ├── data/         # download_mot.sh (datasets are never committed)
+├── scripts/      # fake_service.py (in-memory API demo) and local helper scripts
+├── openspec/     # Specs and archived changes (spec-driven workflow)
 ├── tests/
+├── CONTEXT.md    # Domain terms
 └── docs/
     └── adr/      # Architecture decision records
 ```
@@ -115,7 +121,7 @@ MOT17 test-set ground truth is not public, so each MOT17 training sequence is sp
 
 MOT20 is evaluated after v0.5.
 
-## Results _(TBD)_
+## Results
 
 ### Tracking accuracy — MOT17 validation half
 
@@ -133,11 +139,11 @@ COCO 預訓練權重，未針對 MOT17 微調；數字不可與 ByteTrack 論文
 | FP16 (TensorRT) | 10.4–10.6 | 90.1–90.8 | TBD |
 | INT8 (TensorRT) | 7.4–7.7 | 122.1–130.5 | TBD |
 
-延遲是端到端（前處理、推論、後處理）的中位數，範圍是連續兩次量測的最小到最大，每次 500 張、batch 1、單串流；PyTorch FP16 為 18.1 ms、約 55 FPS。GPU memory 未量測，欄位維持 TBD。細節與限制見 [`docs/evaluation.md`](docs/evaluation.md)。
+延遲是端到端（前處理、推論、後處理）的中位數，範圍是連續兩次量測的最小到最大，每次 500 張、batch 1、單串流；PyTorch FP16 為 18.1 ms、約 55 FPS（與 TensorRT 同期重跑；最初基準為 18.2–18.3 ms）。GPU memory 未量測，欄位維持 TBD。細節與限制見 [`docs/evaluation.md`](docs/evaluation.md)。
 
 ### Dashboards
 
-<!-- Grafana screenshot goes here once v0.4 is done -->
+The Grafana dashboard is provisioned by the Compose monitoring overlay (see [`docs/observability.md`](docs/observability.md)). No screenshot has been captured yet, and the panels are not calibrated against real traffic.
 
 ## Roadmap
 
@@ -166,7 +172,7 @@ COCO 預訓練權重，未針對 MOT17 微調；數字不可與 ByteTrack 論文
 - [x] Kubernetes monitoring manifests (ServiceMonitor, monitoring namespace; manifests, render and structure tests only; not verified on a live cluster)
 
 ### v0.5 — Inference optimization
-- [x] Latency and throughput baseline for the detector (`python -m eval.latency`; PyTorch FP16 on an RTX 5090: 11.2 ms inference, 18.3 ms end to end, about 55 FPS — see [`docs/evaluation.md`](docs/evaluation.md))
+- [x] Latency and throughput baseline for the detector (`python -m eval.latency`; PyTorch FP16 on an RTX 5090: 11.2 ms inference, 18.2–18.3 ms end to end, about 55 FPS in the first baseline runs; 18.1 ms when re-measured alongside the TensorRT runs — see [`docs/evaluation.md`](docs/evaluation.md))
 - [x] Export the detector to ONNX / TensorRT (`python -m inference.export_onnx`, `python -m inference.build_engine`, then `--backend onnx|tensorrt`; TensorRT FP16 on an RTX 5090: 4.8 ms inference, 10.5 ms end to end, about 91 FPS, combined HOTA 50.85 against 50.78 for PyTorch FP16 — see [`docs/evaluation.md`](docs/evaluation.md))
 - [x] INT8 quantization with calibration (`python -m inference.build_engine --precision int8`; TensorRT post-training quantization calibrated on 512 Tuning Half frames; 2.8 ms inference, 7.4–7.7 ms end to end on an RTX 5090, but combined HOTA 49.27 is 1.51 below PyTorch FP16, so it is not recommended; serving INT8 through the worker is unverified — see [`docs/evaluation.md`](docs/evaluation.md))
 - [x] Before/after comparison of latency, throughput and HOTA (PyTorch FP16 → TensorRT FP16 → TensorRT INT8; GPU memory was not measured)
