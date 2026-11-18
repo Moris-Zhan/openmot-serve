@@ -42,8 +42,8 @@
 ## 7. 收尾
 
 - [x] 7.1 `pytest` 預設全部通過（沒有新的 skip 以外的失敗）、`ruff check` 與 `ruff format --check` 乾淨、`openspec validate verify-int8-serving-and-gpu-memory --strict` 通過。驗證：貼出各指令的結尾輸出。
-- [ ] 7.2 `gpu` 與 `integration` 測試在這台機器通過：`pytest -m "integration or gpu" tests/test_tensorrt_int8_worker_e2e.py tests/test_latency_memory_gpu.py -s`；既有的 `tests/test_tensorrt_worker_e2e.py` 不受影響（同樣的指令加上它）。驗證：貼出輸出。
-- [ ] 7.3 驗證紀錄逐項寫明「已驗證」與「沒驗證」（尤其：映像內重建 INT8 engine、k8s、記憶體峰值、GPU 上有其他程序時的數字）。驗證：文件與最後的回報一致。
+- [x] 7.2 `gpu` 與 `integration` 測試在這台機器通過：`pytest -m "integration or gpu" tests/test_tensorrt_int8_worker_e2e.py tests/test_latency_memory_gpu.py -s`；既有的 `tests/test_tensorrt_worker_e2e.py` 不受影響（同樣的指令加上它）。驗證：貼出輸出。
+- [x] 7.3 驗證紀錄逐項寫明「已驗證」與「沒驗證」（尤其：映像內重建 INT8 engine、k8s、記憶體峰值、GPU 上有其他程序時的數字）。驗證：文件與最後的回報一致。
 
 ## Workflow follow-up
 
