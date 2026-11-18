@@ -122,16 +122,18 @@ MOT20 is evaluated after v0.5.
 | Detector | Tracker | Precision | HOTA | MOTA | IDF1 |
 |---|---|---|---|---|---|
 | YOLOX | ByteTrack | FP16 | 50.78 | 46.14 | 59.82 |
-| YOLOX | ByteTrack | INT8 | TBD | TBD | TBD |
+| YOLOX | ByteTrack | INT8 | 49.27 | 45.13 | 58.14 |
 
-COCO 預訓練權重，未針對 MOT17 微調；數字不可與 ByteTrack 論文並列比較。7 個 FRCNN 訓練序列的合併分數，重現方式見 [`docs/evaluation.md`](docs/evaluation.md)。
+COCO 預訓練權重，未針對 MOT17 微調；數字不可與 ByteTrack 論文並列比較。7 個 FRCNN 訓練序列的合併分數，重現方式見 [`docs/evaluation.md`](docs/evaluation.md)。FP16 列是 PyTorch；INT8 列是 TensorRT 訓練後量化（INT8 搭配 FP16），HOTA 比 PyTorch FP16 低 1.51，超過事先訂下的 1.0 門檻，所以標為不建議。
 
 ### Serving performance — RTX 5090
 
 | Precision | Latency per frame (ms) | Throughput (FPS) | GPU memory (GB) |
 |---|---|---|---|
-| FP16 | TBD | TBD | TBD |
-| INT8 | TBD | TBD | TBD |
+| FP16 (TensorRT) | 10.4–10.6 | 90.1–90.8 | TBD |
+| INT8 (TensorRT) | 7.4–7.7 | 122.1–130.5 | TBD |
+
+延遲是端到端（前處理、推論、後處理）的中位數，範圍是連續兩次量測的最小到最大，每次 500 張、batch 1、單串流；PyTorch FP16 為 18.1 ms、約 55 FPS。GPU memory 未量測，欄位維持 TBD。細節與限制見 [`docs/evaluation.md`](docs/evaluation.md)。
 
 ### Dashboards
 
@@ -166,8 +168,8 @@ COCO 預訓練權重，未針對 MOT17 微調；數字不可與 ByteTrack 論文
 ### v0.5 — Inference optimization
 - [x] Latency and throughput baseline for the detector (`python -m eval.latency`; PyTorch FP16 on an RTX 5090: 11.2 ms inference, 18.3 ms end to end, about 55 FPS — see [`docs/evaluation.md`](docs/evaluation.md))
 - [x] Export the detector to ONNX / TensorRT (`python -m inference.export_onnx`, `python -m inference.build_engine`, then `--backend onnx|tensorrt`; TensorRT FP16 on an RTX 5090: 4.8 ms inference, 10.5 ms end to end, about 91 FPS, combined HOTA 50.85 against 50.78 for PyTorch FP16 — see [`docs/evaluation.md`](docs/evaluation.md))
-- [ ] INT8 quantization with calibration
-- [ ] Before/after comparison of latency, throughput and HOTA
+- [x] INT8 quantization with calibration (`python -m inference.build_engine --precision int8`; TensorRT post-training quantization calibrated on 512 Tuning Half frames; 2.8 ms inference, 7.4–7.7 ms end to end on an RTX 5090, but combined HOTA 49.27 is 1.51 below PyTorch FP16, so it is not recommended; serving INT8 through the worker is unverified — see [`docs/evaluation.md`](docs/evaluation.md))
+- [x] Before/after comparison of latency, throughput and HOTA (PyTorch FP16 → TensorRT FP16 → TensorRT INT8; GPU memory was not measured)
 
 ### Later
 - [ ] MOT20 benchmark

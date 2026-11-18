@@ -6,11 +6,11 @@ from pathlib import Path
 from tracking.bytetrack import TrackerParams
 from tracking.files import write_text_atomic
 
-SUPPORTED_PRECISIONS = ("fp16", "fp32")
+SUPPORTED_PRECISIONS = ("fp16", "fp32", "int8")
 SUPPORTED_PRECISIONS_BY_BACKEND = {
     "torch": ("fp16", "fp32"),
     "onnx": ("fp32",),
-    "tensorrt": ("fp16",),
+    "tensorrt": ("fp16", "int8"),
 }
 SUPPORTED_BACKENDS = tuple(SUPPORTED_PRECISIONS_BY_BACKEND)
 _FLOAT_KEYS = ("detection_threshold", "match_threshold")

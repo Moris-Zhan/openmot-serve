@@ -45,9 +45,9 @@ def test_the_readme_ticks_only_the_finished_items_of_v0_5() -> None:
     roadmap = README[README.index("### v0.5") : README.index("### Later")]
     assert "- [x] Latency and throughput baseline" in roadmap
     assert "- [x] Export the detector to ONNX / TensorRT" in roadmap
-    assert "- [ ] INT8 quantization with calibration" in roadmap
-    assert "- [ ] Before/after comparison of latency, throughput and HOTA" in roadmap
-    assert roadmap.count("- [x]") == 2 and roadmap.count("- [ ]") == 2
+    assert "- [x] INT8 quantization with calibration" in roadmap
+    assert "- [x] Before/after comparison of latency, throughput and HOTA" in roadmap
+    assert roadmap.count("- [x]") == 4 and roadmap.count("- [ ]") == 0
 
 
 @pytest.mark.skipif(not (RESULTS / "baseline-torch-fp16-1").is_dir(), reason="local baseline results not present")

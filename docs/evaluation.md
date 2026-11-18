@@ -201,7 +201,7 @@ python -m eval.run --backend tensorrt --precision fp16
 python -m eval.latency --backend tensorrt --precision fp16 --engine path/to/other.engine
 ```
 
-支援的組合只有 `torch`＋`fp16`／`fp32`、`onnx`＋`fp32`、`tensorrt`＋`fp16`；其他組合在載入模型之前就以非 0 的結束碼拒絕，錯誤訊息列出該後端支援的精度。
+支援的組合只有 `torch`＋`fp16`／`fp32`、`onnx`＋`fp32`、`tensorrt`＋`fp16`／`int8`；其他組合在載入模型之前就以非 0 的結束碼拒絕，錯誤訊息列出該後端支援的精度。
 
 ### 產物命名與驗證
 
@@ -210,7 +210,7 @@ python -m eval.latency --backend tensorrt --precision fp16 --engine path/to/othe
 | 產物 | 檔名 |
 | --- | --- |
 | ONNX | `yolox_x-<權重 sha256 前 8 碼>-800x1440.onnx` |
-| engine | `yolox_x-<權重 sha8>-800x1440-trt<TensorRT 版本>-<GPU>-fp16.engine` |
+| engine | `yolox_x-<權重 sha8>-800x1440-trt<TensorRT 版本>-<GPU>-<精度>.engine`（精度為 `fp16` 或 `int8`） |
 | sidecar | `<產物檔名>.json`，記錄來源與建置參數 |
 | timing cache | `<engine 檔名>.timing`，只加速重建，不影響正確性 |
 
@@ -260,7 +260,70 @@ RTX 5090、驅動 580.126.20、torch 2.7.1+cu128、onnxruntime-gpu 1.22.0、Tens
 
 - engine 綁定建置它的 GPU 型號與 TensorRT 版本，換機器或升級後必須重新建置；載入時會被拒絕並提示重建。
 - 輸入固定為 1×3×800×1440，不支援動態形狀或批次推論。
-- INT8 量化不在這次範圍，留給後續的 `add-int8-quantization`。
-- 服務（worker）尚未提供選擇後端的設定；這次只在三個命令列入口提供，worker 與 Docker 目標留給後續的 `serve-optimized-backend`。
+- INT8 的做法、結果與限制見下一節「INT8 量化」。
+- 服務（worker）以 `OPENMOT_BACKEND`、`OPENMOT_ENGINE` 選擇後端，細節見 [`docs/service.md`](service.md)；INT8 在服務端對端未驗證（見下一節）。
 - 數字只代表這一台機器（一張 RTX 5090）與這一組驅動與函式庫版本，不可外推到其他硬體。
 - 需要 GPU 與 `[export]` 套件的測試（`pytest -m "gpu and data"`）只在本機執行，GitHub CI 不覆蓋；預設的 `pytest` 在沒有安裝 `[export]` 的環境也全數通過。
+
+## INT8 量化
+
+結論先行：在這個資料切分上，INT8 engine 的合併 HOTA 比 PyTorch FP16 低 1.51，超過事先訂下的 1.0 門檻，所以標示為**不建議**；速度則明顯變快（純推論約 1.7 倍快）。兩個結果都照實記錄，下面的規則與數字都是在看到結果之前就固定的。
+
+### 做法
+
+- 訓練後量化（PTQ），使用 TensorRT 的 entropy calibrator（`IInt8EntropyCalibrator2`）。建置旗標是 INT8 搭配 FP16：無法量化的層退回 FP16，而不是 FP32。網路的輸入輸出仍是 FP32，所以前處理與後處理與其他後端完全相同。
+- 校準影格 512 張，只取自 7 個 FRCNN 訓練序列的 Tuning Half（第 1 到 `floor(N/2)` 幀），Validation Half 的影格不會被使用。先把所有 Tuning Half 影格依（序列名、幀號）排序成一個清單，再取第 `i * 清單長度 // 512` 個（i 從 0 到 511），不使用亂數，所以相同的資料與參數得到相同的清單。校準看到的張量與推論時一樣（letterbox、0–255 的 FP32）。挑選與抽樣的程式在 `inference/calibration.py`。
+- 建置與使用：
+
+```bash
+python -m inference.build_engine --precision int8     # 另有 --calibration-frames（預設 512）、--data-root（預設 data/MOT17）
+python -m eval.run --backend tensorrt --precision int8
+python -m eval.latency --backend tensorrt --precision int8
+```
+
+- 產物：engine 檔名以 `-int8.engine` 結尾；sidecar 另有 `calibration` 區塊（校準器名稱、張數、挑選清單的 sha256、校準快取的 sha256、資料來源）；校準快取寫在 `<engine>.calib`。重新建置會先刪掉舊的校準快取、從頭校準，所以 sidecar 記錄的挑選清單一定就是這次用的。缺少 MOT17 序列或可用影格不足時，建置在開始之前就失敗，不留下任何檔案。`summary.json` 與 `latency.json` 的 `artifact.build.calibration` 帶出張數與兩個雜湊。
+- 載入時的驗證項目沒有增加（權重、ONNX、輸入尺寸、TensorRT 版本、GPU、精度）；校準資料不影響 engine 能不能在目前環境載入，所以不納入。
+
+### 驗收規則（事先固定）
+
+合併 HOTA 與 PyTorch FP16 相差在 1.0 以內，才標為「建議使用」，超過標為「不建議」，變更仍算完成。校準設定（512 張、等距抽樣、INT8 搭配 FP16）在第一次建置前就固定，看過 Validation Half 的結果之後沒有調整；要調整必須另開變更並說明理由。
+
+### 準確度對照（HOTA）
+
+Validation Half、7 個序列、各自調參後的合併分數；每次都是冷快取的完整 Benchmark Run（快取鍵含後端與精度）。差是與 PyTorch FP16 基準的差：
+
+| Run | 後端 | 精度 | HOTA | MOTA | IDF1 | HOTA 差 | MOTA 差 | IDF1 差 |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `full-fp16-3` | torch | fp16 | 50.78 | 46.14 | 59.82 | 0.00 | 0.00 | 0.00 |
+| `full-tensorrt-fp16-1` | tensorrt | fp16 | 50.85 | 46.14 | 59.93 | +0.07 | 0.00 | +0.11 |
+| `full-tensorrt-int8-1` | tensorrt | int8 | 49.27 | 45.13 | 58.14 | -1.51 | -1.01 | -1.68 |
+
+與同一個執行環境的 TensorRT FP16 相比，INT8 的 HOTA 低 1.58、MOTA 低 1.01、IDF1 低 1.79。
+
+**標示：不建議**（HOTA 差 -1.51，超過 1.0 的門檻）。
+
+### 延遲與吞吐對照
+
+與上一節相同的環境與方法（RTX 5090、輸入 800×1440、50 + 500 張、batch 1、單串流、量測前 GPU 閒置），TensorRT 的 FP16 與 INT8 各連續量測兩次；FP16 兩列是為了這份對照在同一個環境補量的：
+
+| Run | 後端 | 精度 | 純推論中位數 / p95 (ms) | 端到端中位數 / p95 (ms) | 吞吐 (FPS) |
+| --- | --- | --- | ---: | ---: | ---: |
+| `lat-tensorrt-fp16-cmp-1` | tensorrt | fp16 | 4.75 / 4.81 | 10.38 / 14.09 | 90.8 |
+| `lat-tensorrt-fp16-cmp-2` | tensorrt | fp16 | 4.75 / 4.80 | 10.57 / 13.96 | 90.1 |
+| `lat-tensorrt-int8-1` | tensorrt | int8 | 2.82 / 2.94 | 7.67 / 11.69 | 122.1 |
+| `lat-tensorrt-int8-2` | tensorrt | int8 | 2.82 / 2.88 | 7.40 / 10.80 | 130.5 |
+
+- 純推論：INT8 約 2.82 ms，FP16 約 4.75 ms，約 1.7 倍快；兩次的中位數幾乎相同。
+- 端到端：INT8 中位數約 7.4–7.7 ms，FP16 約 10.4–10.6 ms，吞吐約 122–131 FPS 對約 90–91 FPS（約 1.4 倍）。純推論與端到端是兩個不同的倍數，不要互換引用。
+- INT8 兩次端到端的吞吐相差約 7%（122.1 與 130.5），比 FP16 兩次（約 0.8%）的波動大；這份對照沒有量測造成這個差別的原因，也沒有更多次的重複，所以 INT8 的吞吐只能當作約略的範圍。
+- 與 PyTorch FP16（上一節：純推論 11.2 ms、端到端 18.1 ms、約 55 FPS）相比，TensorRT INT8 的端到端約 2.4 倍快，但準確度的代價見上表。
+
+### 限制
+
+- 只試了一組校準設定（512 張、等距抽樣、entropy calibrator）。沒有研究其他張數、其他校準器或逐層保留 FP16，所以不能說「INT8 一定掉分」，只能說「這一組設定掉了 1.51」；是否有能達標的設定不在這次的範圍。
+- 校準資料與評測資料來自同一個資料集的不同半段（Tuning Half 與 Validation Half），不是獨立資料集。
+- `IInt8EntropyCalibrator2` 在 TensorRT 10 被標為棄用（隱式量化），目前能用是因為版本固定在 10.13.3.9；升級 TensorRT 時需要重新評估這個做法。
+- 同一個 INT8 engine 在 30 張真實影格上連續執行 3 次，偵測結果逐位元組相同；但沒有量測「用相同資料重建兩次 INT8 engine」是否得到相同的結果，所以準確度比較只用同一個 engine，不拿兩次重建互比。
+- `OPENMOT_PRECISION=int8` 會被 worker 的設定接受（它與命令列共用同一張精度對照表），這是共用驗證的副作用，不是支援：服務端對端未驗證，沒有以 INT8 engine 跑過 worker 的工作。
+- GPU 記憶體未量測，README 的 GPU memory 欄維持 TBD。
+- 數字只代表這一台機器（一張 RTX 5090）與這一組驅動與函式庫版本，不可外推到其他硬體。

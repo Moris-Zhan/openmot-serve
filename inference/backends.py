@@ -142,12 +142,18 @@ def describe_artifact(
     record: dict[str, object] = {"file": artifact.path.name, "onnx_sha256": artifact.sidecar["onnx_sha256"]}
     if backend == "onnx":
         return {**record, "onnxruntime": version_of("onnxruntime-gpu")}
+    build: dict[str, object] = {
+        key: artifact.sidecar[key]
+        for key in ("precision", "workspace_bytes", "optimization_level", "builder_flags")
+    }
+    calibration = artifact.sidecar.get("calibration")
+    if isinstance(calibration, dict):
+        build["calibration"] = {
+            key: calibration[key] for key in ("frames", "selection_sha256", "cache_sha256")
+        }
     return {
         **record,
         "tensorrt": artifact.sidecar["tensorrt_version"],
         "gpu_name": artifact.sidecar["gpu_name"],
-        "build": {
-            key: artifact.sidecar[key]
-            for key in ("precision", "workspace_bytes", "optimization_level", "builder_flags")
-        },
+        "build": build,
     }

@@ -30,7 +30,7 @@
 沿用 `build_engine`，在 `BuildSettings` 加 `precision`（`fp16` 或 `int8`）與校準設定；`int8` 時設 `BuilderFlag.INT8` 與 `BuilderFlag.FP16`，讓無法量化的層退回 FP16，而不是退回 FP32。「INT8 engine」在本專案的意思就是「INT8 搭配 FP16 後備」，文件要寫明。替代方案是 ONNX QDQ：控制更細，但要多一套套件與產物，範圍明顯變大，已被排除。
 
 **D2：校準影格來自 Tuning Half，確定性均勻抽樣，預設 512 張。**
-新增 `inference/calibration.py`：對 7 個 FRCNN 序列，用 `split_sequence` 取各自的 Tuning Half，把所有影格依（序列名、幀號）排序成一個清單，再以固定步長取 512 張（步長為 `len(清單) // 512`）。不用亂數，所以相同的資料與參數得到相同的清單，清單的 sha256 寫進 sidecar。前處理直接用 `prepare_stage`，使校準看到的張量與推論時完全相同。資料根目錄預設 `data/MOT17`，找不到序列或可用影格少於要求時在建置之前失敗，不寫任何檔案。512 是這次的假設，不是調校結果；選它是因為 TensorRT 文件建議數百張代表性影格，且校準時間仍短。
+新增 `inference/calibration.py`：對 7 個 FRCNN 序列，用 `split_sequence` 取各自的 Tuning Half，把所有影格依（序列名、幀號）排序成一個清單，再以等距索引取 512 張（第 i 張為清單的第 `i * len(清單) // 512` 個；不用 `len // 512` 的固定步長，因為清單長度介於 512 與 1024 之間時，步長法只會取到清單前段）。不用亂數，所以相同的資料與參數得到相同的清單，清單的 sha256 寫進 sidecar。前處理直接用 `prepare_stage`，使校準看到的張量與推論時完全相同。資料根目錄預設 `data/MOT17`，找不到序列或可用影格少於要求時在建置之前失敗，不寫任何檔案。512 是這次的假設，不是調校結果；選它是因為 TensorRT 文件建議數百張代表性影格，且校準時間仍短。
 
 **D3：校準快取與 sidecar。**
 校準器的快取寫在 engine 旁邊的 `<engine>.calib`，sidecar 新增 `calibration` 區塊：校準器名稱、影格張數、挑選清單的 sha256、快取的 sha256、資料來源的描述（`MOT17 train FRCNN Tuning Half`）。`describe_artifact` 把這個區塊放進 `build`，所以 Benchmark Run 與延遲量測的摘要自然帶上校準識別。載入時的驗證項目不變（權重、ONNX、輸入尺寸、TensorRT 版本、GPU、精度）；校準資料不納入載入驗證，因為它不影響 engine 能不能在目前環境載入。目標 engine 已存在時的處理沿用現有行為，不新增覆寫語意。
