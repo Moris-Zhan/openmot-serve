@@ -137,6 +137,7 @@ python -m eval.run --data-root /nonexistent/MOT17 --results-root /tmp/openmot_ev
 - **同步**：每一段計時前後都等 GPU 完成工作，所以數字是實際完成時間，不是工作排入佇列的時間。
 - **兩輪**：端到端與純推論各量一輪，不在同一輪內分段同步，因為階段之間的同步會打斷 GPU 管線，讓端到端數字偏高。
 - **統計**：中位數與 p95 以 `numpy.percentile`（線性內插）計算，單位毫秒。吞吐等於量測張數除以各張端到端延遲的總和，不含影格之間的空檔；單串流、batch 1。
+- **GPU 記憶體**：以 `nvidia-smi` 讀整張 GPU 的已用量（MiB），在載入偵測器之前、載入之後、量測結束之後各讀一次，結果記錄兩個增量；第一次讀數在程序使用 CUDA 之前取得，所以增量含該程序自己的 CUDA context。讀不到時（例如 `--device cpu`）量測照常完成，`gpu_memory` 標為不可用。計時區間內不讀取。細節與限制見「INT8 量化」一節的「GPU 記憶體」。
 
 ### 執行
 
@@ -261,13 +262,13 @@ RTX 5090、驅動 580.126.20、torch 2.7.1+cu128、onnxruntime-gpu 1.22.0、Tens
 - engine 綁定建置它的 GPU 型號與 TensorRT 版本，換機器或升級後必須重新建置；載入時會被拒絕並提示重建。
 - 輸入固定為 1×3×800×1440，不支援動態形狀或批次推論。
 - INT8 的做法、結果與限制見下一節「INT8 量化」。
-- 服務（worker）以 `OPENMOT_BACKEND`、`OPENMOT_ENGINE` 選擇後端，細節見 [`docs/service.md`](service.md)；INT8 在服務端對端未驗證（見下一節）。
+- 服務（worker）以 `OPENMOT_BACKEND`、`OPENMOT_ENGINE` 選擇後端，細節見 [`docs/service.md`](service.md)；INT8 的服務端對端驗證見下一節的「服務端對端」。
 - 數字只代表這一台機器（一張 RTX 5090）與這一組驅動與函式庫版本，不可外推到其他硬體。
 - 需要 GPU 與 `[export]` 套件的測試（`pytest -m "gpu and data"`）只在本機執行，GitHub CI 不覆蓋；預設的 `pytest` 在沒有安裝 `[export]` 的環境也全數通過。
 
 ## INT8 量化
 
-結論先行：在這個資料切分上，INT8 engine 的合併 HOTA 比 PyTorch FP16 低 1.51，超過事先訂下的 1.0 門檻，所以標示為**不建議**；速度則明顯變快（純推論約 1.7 倍快）。兩個結果都照實記錄，下面的規則與數字都是在看到結果之前就固定的。
+結論先行：在這個資料切分上，INT8 engine 的合併 HOTA 比 PyTorch FP16 低 1.51，超過事先訂下的 1.0 門檻，所以標示為**不建議**；速度則明顯變快（純推論約 1.7 倍快）。兩個結果都照實記錄，下面的規則與數字都是在看到結果之前就固定的。INT8 engine 也已經經由 TensorRT worker 端對端處理過一個真實的 Job（見「服務端對端」），並量了 GPU 記憶體（見「GPU 記憶體」）。
 
 ### 做法
 
@@ -318,12 +319,46 @@ Validation Half、7 個序列、各自調參後的合併分數；每次都是冷
 - INT8 兩次端到端的吞吐相差約 7%（122.1 與 130.5），比 FP16 兩次（約 0.8%）的波動大；這份對照沒有量測造成這個差別的原因，也沒有更多次的重複，所以 INT8 的吞吐只能當作約略的範圍。
 - 與 PyTorch FP16（上一節：純推論 11.2 ms、端到端 18.1 ms、約 55 FPS）相比，TensorRT INT8 的端到端約 2.4 倍快，但準確度的代價見上表。
 
+### 服務端對端
+
+服務端對端已驗證：TensorRT worker 以 INT8 engine 處理了一個真實的 Job。`docker-compose.tensorrt.yml` 的 `OPENMOT_PRECISION` 原本寫死為 `fp16`，現在可由環境變數指定，未設定時仍是 `fp16`：
+
+```bash
+OPENMOT_PRECISION=int8 OPENMOT_ENGINE_FILE=<INT8 engine 檔名> docker compose $STACK up -d --build
+```
+
+`$STACK` 與其餘步驟見 [`docs/service.md`](service.md) 的「TensorRT worker」與「以 INT8 engine 服務」。驗證用 `tests/test_tensorrt_int8_worker_e2e.py`（RTX 5090、TensorRT 10.13.3.9、MOT17-09 前 60 張影格），結果：
+
+- Job 從提交到 `succeeded` 約 2.3 秒；Result 與中繼檔和同一個 INT8 engine 以命令列（`python -m tracking.run --backend tensorrt --precision int8 --engine …`）處理同一序列的結果逐位元組相同，中繼檔記錄 `"backend": "tensorrt"` 與 `"precision": "int8"`，日誌是 `detector: backend=tensorrt precision=int8 engine=…`。
+- 同一個 INT8 engine 以命令列連續執行 3 次，結果逐位元組相同，所以上面的比對才有意義。
+- 未指定精度（預設 `fp16`）卻掛載 INT8 engine 時，worker 在處理任何 Job 之前結束，訊息指名精度不符。
+- 發現並修正的問題：舊的 `openmot-worker:tensorrt` 映像是在 INT8 支援之前建的，裡面的程式碼只接受 `fp16` 與 `fp32`，worker 與命令列都拒絕 `int8`；重建映像之後才通過。測試與文件都要求先重建。
+
+### GPU 記憶體
+
+量法：用 `nvidia-smi` 讀整張 GPU 的已用量（MiB），在載入偵測器之前、載入之後、量測結束之後各讀一次；第一次讀數在程序使用 CUDA 之前取得。表中「載入後增量」與「量測後增量」都是相對於載入前。GPU 在每次量測前閒置（載入前 4 MiB，沒有其他程序）。每個設定連續量兩次，預設的 50 + 500 張，執行名稱 `lat-mem-<後端>-<精度>-<序號>`：
+
+| Run | 後端 | 精度 | 載入前 (MiB) | 載入後增量 (MiB) | 量測後增量 (MiB) |
+| --- | --- | --- | ---: | ---: | ---: |
+| `lat-mem-torch-fp16-1` | torch | fp16 | 4 | 922 | 1360 |
+| `lat-mem-torch-fp16-2` | torch | fp16 | 4 | 922 | 1360 |
+| `lat-mem-tensorrt-fp16-1` | tensorrt | fp16 | 4 | 894 | 1018 |
+| `lat-mem-tensorrt-fp16-2` | tensorrt | fp16 | 4 | 894 | 1018 |
+| `lat-mem-tensorrt-int8-1` | tensorrt | int8 | 4 | 762 | 886 |
+| `lat-mem-tensorrt-int8-2` | tensorrt | int8 | 4 | 762 | 886 |
+
+- 每個設定兩次的數字完全相同，沒有跑間差異。
+- 量測結束後：TensorRT FP16 比 PyTorch FP16 少 342 MiB（約 25%），INT8 比 TensorRT FP16 再少 132 MiB（約 13%）。載入後的差距小得多（922、894、762），量測期間 PyTorch 多占了 438 MiB，TensorRT FP16 與 INT8 各多占 124 MiB；這份對照沒有分析造成這個差別的原因。
+- 這六次也量了延遲，純推論的中位數與先前記錄的相同（約 11.2、4.75、2.83 ms），但 TensorRT FP16 的端到端中位數是 11.69 與 11.09 ms，高於先前兩次的 10.38 與 10.57 ms（PyTorch FP16 與 INT8 沒有超出先前的範圍）。純推論不變而端到端變高，只有含 CPU 前後處理的部分受影響；事後查到主機的 CPU 負載偏高（24 核心、1 分鐘平均約 13.6），所以懷疑是 CPU 競爭，但量測當下沒有記錄負載，這個解釋沒有被驗證。因此 README 的延遲欄沿用先前記錄的數字，這一批只用於記憶體。
+
+限制：量的是整張 GPU 的已用量，含該程序的 CUDA context 與配置器的快取，不是模型權重的大小；只取三個時間點，載入過程的瞬間峰值取不到；GPU 上有其他程序時數字會偏，所以只在閒置的 GPU 上有意義（載入前的讀數就是用來看這件事）；只是單一程序、單串流的量測，不是服務中 worker 的長期占用。
+
 ### 限制
 
 - 只試了一組校準設定（512 張、等距抽樣、entropy calibrator）。沒有研究其他張數、其他校準器或逐層保留 FP16，所以不能說「INT8 一定掉分」，只能說「這一組設定掉了 1.51」；是否有能達標的設定不在這次的範圍。
 - 校準資料與評測資料來自同一個資料集的不同半段（Tuning Half 與 Validation Half），不是獨立資料集。
 - `IInt8EntropyCalibrator2` 在 TensorRT 10 被標為棄用（隱式量化），目前能用是因為版本固定在 10.13.3.9；升級 TensorRT 時需要重新評估這個做法。
 - 同一個 INT8 engine 在 30 張真實影格上連續執行 3 次，偵測結果逐位元組相同；但沒有量測「用相同資料重建兩次 INT8 engine」是否得到相同的結果，所以準確度比較只用同一個 engine，不拿兩次重建互比。
-- `OPENMOT_PRECISION=int8` 會被 worker 的設定接受（它與命令列共用同一張精度對照表），這是共用驗證的副作用，不是支援：服務端對端未驗證，沒有以 INT8 engine 跑過 worker 的工作。
-- GPU 記憶體未量測，README 的 GPU memory 欄維持 TBD。
+- 服務端對端只驗證了一個 Job（60 張影格）與一個 engine：engine 是 host 上建好再複製進卷的，沒有在映像內重建 INT8 engine，也沒有長時間或多個 Job 的壓力測試。Kubernetes 沒有 TensorRT 映像，仍是 PyTorch，所以 k8s 上的 INT8 沒有驗證。
+- GPU 記憶體只取三個時間點的整張 GPU 讀數（見「GPU 記憶體」），不含瞬間峰值，也沒有量服務中 worker 的長期占用。
 - 數字只代表這一台機器（一張 RTX 5090）與這一組驅動與函式庫版本，不可外推到其他硬體。

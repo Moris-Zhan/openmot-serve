@@ -9,6 +9,7 @@ from inference.build_engine import build_parser
 ROOT = Path(__file__).resolve().parents[1]
 GUIDE = (ROOT / "docs" / "evaluation.md").read_text(encoding="utf-8")
 README = (ROOT / "README.md").read_text(encoding="utf-8")
+SERVICE = (ROOT / "docs" / "service.md").read_text(encoding="utf-8")
 RESULTS = ROOT / "data" / "results"
 LATENCY = RESULTS / "latency"
 SECTION = GUIDE[GUIDE.index("## INT8 量化") :] if "## INT8 量化" in GUIDE else ""
@@ -23,8 +24,23 @@ ACCURACY_ROW = re.compile(
 LATENCY_ROW = re.compile(
     r"^\| `(lat-[\w-]+)` \| (\w+) \| (\w+) \| ([\d.]+) / ([\d.]+) \| ([\d.]+) / ([\d.]+) \| ([\d.]+) \|$", re.M
 )
+MEMORY_ROW = re.compile(r"^\| `(lat-mem-[\w-]+)` \| (\w+) \| (\w+) \| (\d+) \| (\d+) \| (\d+) \|$", re.M)
+MEMORY_RUNS = {
+    "torch-fp16": ["lat-mem-torch-fp16-1", "lat-mem-torch-fp16-2"],
+    "tensorrt-fp16": ["lat-mem-tensorrt-fp16-1", "lat-mem-tensorrt-fp16-2"],
+    "tensorrt-int8": ["lat-mem-tensorrt-int8-1", "lat-mem-tensorrt-int8-2"],
+}
 VERDICT = re.compile(r"\*\*標示：(建議使用|不建議)\*\*")
 recorded = pytest.mark.skipif(not (RESULTS / INT8_RUN).is_dir(), reason="local INT8 results not present")
+recorded_memory = pytest.mark.skipif(
+    not all((LATENCY / run).is_dir() for runs in MEMORY_RUNS.values() for run in runs),
+    reason="local GPU memory results not present",
+)
+
+
+def _span(values: list[float], digits: int) -> str:
+    low, high = f"{min(values):.{digits}f}", f"{max(values):.{digits}f}"
+    return low if low == high else f"{low}–{high}"
 
 
 def _combined(run: str) -> dict[str, float]:
@@ -49,14 +65,46 @@ def test_the_int8_section_follows_the_onnx_and_tensorrt_section() -> None:
         "10.13.3.9",
         "棄用",
         "OPENMOT_PRECISION=int8",
-        "服務端對端未驗證",
+        "服務端對端已驗證",
+        "逐位元組相同",
+        "docker-compose.tensorrt.yml",
         "GPU 記憶體",
-        "未量測",
+        "整張 GPU",
+        "nvidia-smi",
         "inference/calibration.py",
     ],
 )
 def test_the_section_covers_the_required_topic(required: str) -> None:
     assert required in SECTION
+
+
+def test_the_stale_statements_about_serving_and_memory_are_gone() -> None:
+    assert "服務端對端未驗證" not in GUIDE
+    assert "沒有以 INT8 engine 跑過 worker" not in GUIDE
+    assert "GPU 記憶體未量測" not in GUIDE
+
+
+def test_the_service_guide_lists_int8_as_a_tensorrt_precision_and_shows_how_to_serve_it() -> None:
+    assert "`tensorrt` 只支援 `fp16`" not in SERVICE
+    assert "`tensorrt` 支援 `fp16` 或 `int8`" in SERVICE
+    assert "OPENMOT_PRECISION=int8" in SERVICE
+    assert "tests/test_tensorrt_int8_worker_e2e.py" in SERVICE
+
+
+@recorded_memory
+def test_the_memory_rows_match_the_recorded_results() -> None:
+    matches = MEMORY_ROW.findall(SECTION)
+    assert {match[0] for match in matches} == {run for runs in MEMORY_RUNS.values() for run in runs}
+    for run, backend, precision, before, load, after_run in matches:
+        document = json.loads((LATENCY / run / "latency.json").read_text())
+        memory = document["gpu_memory"]
+        assert memory["available"] is True
+        assert (document["backend"], document["precision"]) == (backend, precision)
+        assert (str(memory["used_before_load_mib"]), str(memory["load_delta_mib"]), str(memory["run_delta_mib"])) == (
+            before,
+            load,
+            after_run,
+        )
 
 
 def test_the_stale_statements_about_int8_and_the_supported_combinations_are_gone() -> None:
@@ -122,22 +170,32 @@ def test_the_readme_accuracy_row_carries_the_recorded_int8_scores() -> None:
 
 
 @recorded
-def test_the_readme_performance_rows_summarise_the_recorded_latency_runs() -> None:
-    def summary(runs: list[str]) -> tuple[str, str]:
+@recorded_memory
+def test_the_readme_performance_rows_summarise_the_recorded_runs() -> None:
+    def latency(runs: list[str]) -> tuple[str, str]:
         documents = [json.loads((LATENCY / run / "latency.json").read_text()) for run in runs]
         medians = [document["results"]["end_to_end"]["median_ms"] for document in documents]
         speeds = [document["results"]["throughput_fps"] for document in documents]
-        return f"{min(medians):.1f}–{max(medians):.1f}", f"{min(speeds):.1f}–{max(speeds):.1f}"
+        return _span(medians, 1), _span(speeds, 1)
 
-    int8 = summary(["lat-tensorrt-int8-1", "lat-tensorrt-int8-2"])
-    fp16 = summary(["lat-tensorrt-fp16-cmp-1", "lat-tensorrt-fp16-cmp-2"])
-    assert f"| INT8 (TensorRT) | {int8[0]} | {int8[1]} | TBD |" in README
-    assert f"| FP16 (TensorRT) | {fp16[0]} | {fp16[1]} | TBD |" in README
+    def memory(key: str) -> str:
+        documents = [json.loads((LATENCY / run / "latency.json").read_text()) for run in MEMORY_RUNS[key]]
+        return _span([document["gpu_memory"]["run_delta_mib"] for document in documents], 0)
+
+    expected = {
+        "FP16 (PyTorch)": (latency(["lat-torch-fp16-1", "lat-torch-fp16-2"]), memory("torch-fp16")),
+        "FP16 (TensorRT)": (latency(["lat-tensorrt-fp16-cmp-1", "lat-tensorrt-fp16-cmp-2"]), memory("tensorrt-fp16")),
+        "INT8 (TensorRT)": (latency(["lat-tensorrt-int8-1", "lat-tensorrt-int8-2"]), memory("tensorrt-int8")),
+    }
+    for label, ((median, speed), used) in expected.items():
+        assert f"| {label} | {median} | {speed} | {used} |" in README
 
 
-def test_the_readme_says_gpu_memory_was_not_measured() -> None:
+def test_the_readme_gives_the_gpu_memory_and_how_it_was_measured() -> None:
     performance = README[README.index("### Serving performance") : README.index("### Dashboards")]
-    assert "未量測" in performance and "GPU memory" in performance
+    assert "GPU memory (MiB)" in performance
+    assert "整張 GPU" in performance and "nvidia-smi" in performance
+    assert "TBD" not in performance and "未量測" not in performance
 
 
 def test_the_readme_roadmap_ticks_the_int8_items_and_labels_the_result_honestly() -> None:
