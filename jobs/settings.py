@@ -14,6 +14,9 @@ DEFAULT_API_METRICS_PORT = 9101
 DEFAULT_WORKER_METRICS_PORT = 9102
 MAX_PORT = 65535
 _REDIS_SCHEMES = ("redis://", "rediss://", "unix://")
+STORAGE_BACKENDS = ("filesystem", "s3")
+DEFAULT_S3_REGION = "us-east-1"
+_HTTP_SCHEMES = ("http://", "https://")
 
 
 class SettingsError(ValueError):
@@ -34,6 +37,10 @@ class Settings:
     worker_metrics_port: int = DEFAULT_WORKER_METRICS_PORT
     backend: str = "torch"
     engine: Path | None = None
+    storage_backend: str = "filesystem"
+    s3_bucket: str | None = None
+    s3_endpoint_url: str | None = None
+    s3_region: str = DEFAULT_S3_REGION
 
 
 def _text(environ: Mapping[str, str], name: str, default: str | None = None) -> str:
@@ -113,6 +120,22 @@ def _engine(environ: Mapping[str, str], backend: str) -> Path | None:
     return path
 
 
+def _storage_backend(environ: Mapping[str, str]) -> str:
+    backend = _text(environ, "OPENMOT_STORAGE_BACKEND", "filesystem")
+    if backend not in STORAGE_BACKENDS:
+        raise SettingsError(f"OPENMOT_STORAGE_BACKEND must be one of {STORAGE_BACKENDS}, got {backend!r}")
+    return backend
+
+
+def _s3_endpoint_url(environ: Mapping[str, str]) -> str | None:
+    if "OPENMOT_S3_ENDPOINT_URL" not in environ:
+        return None
+    url = _text(environ, "OPENMOT_S3_ENDPOINT_URL")
+    if not url.startswith(_HTTP_SCHEMES):
+        raise SettingsError(f"OPENMOT_S3_ENDPOINT_URL must start with one of {_HTTP_SCHEMES}, got {url!r}")
+    return url
+
+
 def load_settings(environ: Mapping[str, str]) -> Settings:
     max_upload_bytes = _positive_int(environ, "OPENMOT_MAX_UPLOAD_BYTES", DEFAULT_MAX_UPLOAD_BYTES)
     max_unpacked_bytes = _positive_int(environ, "OPENMOT_MAX_UNPACKED_BYTES", DEFAULT_MAX_UNPACKED_BYTES)
@@ -132,6 +155,8 @@ def load_settings(environ: Mapping[str, str]) -> Settings:
         )
     precision = _precision(environ)
     backend = _backend(environ, precision)
+    storage_backend = _storage_backend(environ)
+    is_s3 = storage_backend == "s3"
     return Settings(
         storage_dir=_storage_dir(environ),
         redis_url=_redis_url(environ),
@@ -145,4 +170,8 @@ def load_settings(environ: Mapping[str, str]) -> Settings:
         task_time_limit_seconds=task_time_limit_seconds,
         api_metrics_port=_port(environ, "OPENMOT_API_METRICS_PORT", DEFAULT_API_METRICS_PORT),
         worker_metrics_port=_port(environ, "OPENMOT_WORKER_METRICS_PORT", DEFAULT_WORKER_METRICS_PORT),
+        storage_backend=storage_backend,
+        s3_bucket=_text(environ, "OPENMOT_S3_BUCKET") if is_s3 else None,
+        s3_endpoint_url=_s3_endpoint_url(environ) if is_s3 else None,
+        s3_region=_text(environ, "OPENMOT_S3_REGION", DEFAULT_S3_REGION),
     )

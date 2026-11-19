@@ -11,13 +11,13 @@
 - `jobs/settings.py` 的 `Settings` 是 frozen dataclass，新欄位都有預設值；`OPENMOT_STORAGE_DIR` 必須是絕對路徑。
 - Compose：api 與 worker 都掛 `storage:/data/storage`；`worker` 掛權重檔（唯讀）；已有 TensorRT 與 monitoring 的 override。Docker daemon 是 sidecar，所以先前的端對端測試不用 bind mount 掛工作目錄路徑，而是用具名 volume 與 tar 串流。Compose 版本 v5.3.1。
 - 既有端對端測試（`tests/test_compose_e2e.py`）的模式：專屬專案名稱與埠、缺 Docker、nvidia runtime、權重或影格時 skip、結束時清除。
-- `api-requirements.txt` 與 `pyproject.toml` 的 `service` 相依都以下限指定（`celery>=5.4`、`redis>=5`），只有 `prometheus_client` 釘死。系統 Python 已有 boto3 1.43.50；本機 MinIO 映像不存在，需要從網路拉取。
+- `api-requirements.txt` 與 `pyproject.toml` 的 `service` 相依都以下限指定（`celery>=5.4`、`redis>=5`），只有 `prometheus_client` 釘死。系統 Python 已有 boto3 1.43.50；本機 RustFS 映像不存在，需要從網路拉取。
 
 ## Goals / Non-Goals
 
 **Goals:**
 - 讓 api 與 worker 能在沒有共用磁碟的情況下，用 S3 相容儲存交換影格與結果，且預設行為不變。
-- 用真實的 MinIO 證明：同一個序列的 Result 與命令列逐位元組相同。
+- 用真實的 S3 相容伺服器（RustFS） 證明：同一個序列的 Result 與命令列逐位元組相同。
 - 文件把「已驗證」與「沒驗證」切乾淨。
 
 **Non-Goals:**
@@ -50,7 +50,7 @@
 
 ### D5：worker 的處理流程：下載 → 既有追蹤 → 上傳 → 才標 `succeeded`
 
-`WorkerContext` 末尾新增有預設值的 `objects: ObjectStore | None = None`。`s3` 後端下 `_run_tracking` 在同一個 `_within_time_limit` 區塊內依序：清除殘留暫存、下載 `frames/` 到 `scratch`、`track_sequence`（路徑指向 `scratch`）、上傳 `result.txt` 與 `result.meta.json`；整個區塊結束後（無論成功失敗）`remove_job(scratch_layout, job_id)`。上傳在 `store.transition(SUCCEEDED)` **之前**完成，所以 api 看到 `succeeded` 時物件一定已存在。失敗時除了既有的 `_discard_partial_output`，另對 bucket 的 `result.txt`、`result.meta.json` 盡力刪除（失敗只記日誌），避免失敗的 Job 留下 Result 物件。時限（`OPENMOT_TASK_TIME_LIMIT_SECONDS`）涵蓋下載與上傳，因為它們是 Job 的一部分。
+`WorkerContext` 末尾新增有預設值的 `objects: ObjectStore | None = None`。`s3` 後端下 `_run_tracking` 在同一個 `_within_time_limit` 區塊內依序：清除殘留暫存、下載 `frames/` 到 `scratch`、`track_sequence`（路徑指向 `scratch`）、上傳 `result.txt` 與 `result.meta.json`；整個區塊結束後（無論成功失敗）`remove_job(scratch_layout, job_id)`。上傳在 `store.transition(SUCCEEDED)` **之前**完成，所以 api 看到 `succeeded` 時物件一定已存在。失敗時除了既有的 `_discard_partial_output`，另對 bucket 的 `result.txt`、`result.meta.json` 盡力刪除（失敗只記日誌），避免失敗的 Job 留下 Result 物件。時限（`OPENMOT_TASK_TIME_LIMIT_SECONDS`）涵蓋下載與上傳，因為它們是 Job 的一部分。worker 的 `openmot_frames_processed_total` 原本數的是本機 `frames/` 資料夾的檔案數，`s3` 後端下那個資料夾不存在，指標會靜默地一直是 0；所以 `s3` 後端改數 bucket 內 `frames/` 的物件數（列舉失敗時為 0，與資料夾不存在時一致）。這是實作時發現的，屬於保持既有行為，不是新需求。
 
 ### D6：結果讀取與健康檢查
 
@@ -58,11 +58,11 @@
 
 ### D7：Compose override 用「同一個目標路徑、不同來源」打破共用
 
-`docker-compose.s3.yml` 加入 `minio` 服務（官方 `minio/minio` 映像，釘版本，啟動命令 `server /data`，健康檢查用 `mc ready` 或對 `/minio/health/live` 的 HTTP 檢查，資料放 `minio-data` 具名 volume），並覆寫 api 與 worker：環境變數（後端、端點 `http://minio:9000`、bucket、金鑰）、`depends_on: minio: service_healthy`，以及把 `/data/storage` 的來源分別改成 `api-scratch` 與 `worker-scratch`（Compose 以容器內目標路徑合併 volume，所以同一個 `/data/storage` 會被覆寫成不同來源）。金鑰以 `${MINIO_ROOT_USER:?...}`、`${MINIO_ROOT_PASSWORD:?...}` 引用，缺少時渲染失敗，所以提交的檔案內沒有預設金鑰；api 與 worker 的 `AWS_ACCESS_KEY_ID` 與 `AWS_SECRET_ACCESS_KEY` 直接用同一組值（開發用的 root 金鑰，文件註明正式環境應建立專屬的存取金鑰）。bucket 不由 Compose 建立：端對端測試以 boto3 建立，文件說明手動建法；`/health` 在 bucket 不存在時回報 `503`，這本身就是提示。
+`docker-compose.s3.yml` 加入 `s3` 服務（`rustfs/rustfs:1.0.6`，釘版本，Apache 2.0，RustFS 專案自己發佈；映像內有 `curl`，以預設命令啟動，金鑰用 `RUSTFS_ACCESS_KEY`／`RUSTFS_SECRET_KEY`，健康檢查用 `curl -f http://localhost:9000/health/ready`，資料放 `s3-data` 具名 volume），並覆寫 api 與 worker：環境變數（後端、端點 `http://s3:9000`、bucket、金鑰）、`depends_on: s3: service_healthy`，以及把 `/data/storage` 的來源分別改成 `api-scratch` 與 `worker-scratch`（Compose 以容器內目標路徑合併 volume，所以同一個 `/data/storage` 會被覆寫成不同來源）。金鑰以 `${S3_ACCESS_KEY:?...}`、`${S3_SECRET_KEY:?...}` 引用，缺少時渲染失敗，所以提交的檔案內沒有預設金鑰；api 與 worker 的 `AWS_ACCESS_KEY_ID` 與 `AWS_SECRET_ACCESS_KEY` 直接用同一組值（開發用的 root 金鑰，文件註明正式環境應建立專屬的存取金鑰）。bucket 不由 Compose 建立：端對端測試以 boto3 建立，文件說明手動建法；`/health` 在 bucket 不存在時回報 `503`，這本身就是提示。
 
 ### D8：端對端測試用專屬名稱，Result 與命令列比對
 
-新檔 `tests/test_s3_storage_e2e.py`（`integration` 與 `gpu` 標記）：專案 `openmot-s3-e2e`、volume 以 `openmot-s3-e2e-` 開頭、api 埠 18003 與 MinIO 埠 19000（可由環境變數覆寫）、隨機產生的金鑰與 bucket；缺 Docker、nvidia runtime、權重、影格、或 MinIO 映像無法取得時 skip 並說明。流程與既有端對端相同（影格以 tar 串流放進臨時工作區，不 bind mount 工作目錄路徑）。驗證：Job `succeeded`；Result 與中繼檔和「同一個權重、同一組設定以命令列處理同一序列」逐位元組相同；bucket 內 `frames/` 恰有 N 個物件與 `result.txt`、`result.meta.json`；api 與 worker 的 `/data/storage` 來自不同的 volume（`docker inspect`）；兩個本機暫存的 `staging` 與 `scratch` 為空；bucket 不存在時 `/health` 為 `503`。結束時只清除上述名稱的資源。執行前後比對不屬於 `openmot-s3-e2e*` 的容器、卷與映像完全相同（新拉取的 MinIO 映像是唯一允許新增的映像，並記錄它的標籤與大小）。
+新檔 `tests/test_s3_storage_e2e.py`（`integration` 與 `gpu` 標記）：專案 `openmot-s3-e2e`、volume 以 `openmot-s3-e2e-` 開頭、api 埠 18003 與 S3 伺服器埠 19000（可由環境變數覆寫）、隨機產生的金鑰與 bucket；缺 Docker、nvidia runtime、權重、影格、或 RustFS 映像無法取得時 skip 並說明。流程與既有端對端相同（影格以 tar 串流放進臨時工作區，不 bind mount 工作目錄路徑）。驗證：Job `succeeded`；Result 與中繼檔和「同一個權重、同一組設定以命令列處理同一序列」逐位元組相同；bucket 內 `frames/` 恰有 N 個物件與 `result.txt`、`result.meta.json`；api 與 worker 的 `/data/storage` 來自不同的 volume（`docker inspect`）；兩個本機暫存的 `staging` 與 `scratch` 為空；bucket 不存在時 `/health` 為 `503`。結束時只清除上述名稱的資源。執行前後比對不屬於 `openmot-s3-e2e*` 的容器、卷與映像完全相同（新拉取的 MinIO 映像是唯一允許新增的映像，並記錄它的標籤與大小）。
 
 ### D9：相依與映像大小
 
@@ -70,12 +70,12 @@
 
 ## Risks / Trade-offs
 
-- **逐張上傳／下載的延遲** → 一個 600 張的序列會是 600 次請求；量測並記錄提交時間與 worker 開始處理前的下載時間（本機 MinIO 上的數字，不代表跨網路）；平行化列為後續。
+- **逐張上傳／下載的延遲** → 一個 600 張的序列會是 600 次請求；量測並記錄提交時間與 worker 開始處理前的下載時間（本機 RustFS 上的數字，不代表跨網路）；平行化列為後續。
 - **半個 Job** → 上傳失敗與入隊失敗都清乾淨（D4、D4a），並以測試固定；清理本身失敗則記日誌，因為不能保證清理一定成功。
 - **worker 在處理途中被終止，留下本機暫存** → 下次處理同一個 Job 先清除（D5）；不同 Job 的殘留暫存不會被自動清掉，文件列為限制（暫存只在本機、被 volume 隔離，重新建立容器即清除）。
 - **物件儲存與 Job Status 的一致性** → `succeeded` 之前先上傳（D5），所以不會出現 `succeeded` 卻沒有 Result；反過來，上傳成功後標記失敗（Redis 故障）會留下孤兒 Result 物件，這次不處理，文件列為限制。
-- **只驗證 MinIO** → 文件寫明沒有在 AWS S3 或其他相容服務上驗證；S3 API 的使用限於 `PutObject`／`GetObject`／`ListObjectsV2`／`DeleteObjects`／`HeadBucket`，降低相容性風險，但不是驗證。
-- **開發用的 root 金鑰** → 只在本機 MinIO；提交的檔案內沒有金鑰（D7）。
+- **只驗證 RustFS** → 文件寫明沒有在 AWS S3 或其他相容服務上驗證；S3 API 的使用限於 `PutObject`／`GetObject`／`ListObjectsV2`／`DeleteObjects`／`HeadBucket`，降低相容性風險，但不是驗證。
+- **開發用的 root 金鑰** → 只在本機 RustFS；提交的檔案內沒有金鑰（D7）。
 - **映像變大** → 量測並回報（D9）。
 - **Compose volume 合併行為依賴 Compose 版本** → 以渲染測試固定「api 與 worker 的 `/data/storage` 來源不同」，版本改變導致合併行為不同時測試會失敗。
 

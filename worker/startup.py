@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from jobs.layout import StorageLayout
+from jobs.object_store import ObjectStore, create_object_store
 from jobs.settings import Settings
 from jobs.store import JobStore
 from tracking.bytetrack import TrackerParams
@@ -12,6 +13,7 @@ from tracking.sequence import DetectFrame
 from worker.processing import WorkerContext
 
 WORKER_DEVICE = "cuda"
+SCRATCH_DIR = "scratch"
 
 
 class StartupError(RuntimeError):
@@ -23,6 +25,7 @@ class StartupDependencies:
     check_environment: Callable[[], CheckOutcome]
     load_detect_frame: Callable[[Path, str, str], DetectFrame]
     make_store: Callable[[Settings], JobStore]
+    make_objects: Callable[[Settings], ObjectStore | None] = create_object_store
 
 
 def start_worker(settings: Settings, dependencies: StartupDependencies, owner: str) -> WorkerContext:
@@ -35,9 +38,11 @@ def start_worker(settings: Settings, dependencies: StartupDependencies, owner: s
         detect_frame = dependencies.load_detect_frame(settings.weights, settings.precision, WORKER_DEVICE)
     except Exception as error:
         raise StartupError(f"cannot load the detector from {settings.weights}: {error}") from error
+    objects = dependencies.make_objects(settings)
+    scratch = settings.storage_dir if objects is None else settings.storage_dir / SCRATCH_DIR
     return WorkerContext(
         store=dependencies.make_store(settings),
-        layout=StorageLayout(settings.storage_dir),
+        layout=StorageLayout(scratch),
         detect_frame=detect_frame,
         metadata=RunMetadata(
             TrackerParams(), WEIGHTS_ID, WEIGHTS_SHA256, settings.precision, settings.backend
@@ -45,4 +50,5 @@ def start_worker(settings: Settings, dependencies: StartupDependencies, owner: s
         owner=owner,
         lock_timeout_seconds=settings.lock_timeout_seconds,
         time_limit_seconds=settings.task_time_limit_seconds,
+        objects=objects,
     )

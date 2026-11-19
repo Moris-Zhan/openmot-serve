@@ -10,6 +10,7 @@ from prometheus_client import CollectorRegistry
 from app.api import create_app
 from app.upload import UploadLimits
 from jobs.layout import StorageLayout
+from jobs.object_store import create_object_store
 from jobs.redis_store import RedisJobStore
 from jobs.settings import Settings, SettingsError, load_settings
 from metrics.definitions import Metrics, create_metrics
@@ -36,6 +37,7 @@ def build_app(settings: Settings, redis_client: redis.Redis, metrics: Metrics | 
         make_enqueue(create_celery(settings)),
         lambda: redis_client.ping(),
         metrics=metrics,
+        objects=create_object_store(settings),
     )
 
 

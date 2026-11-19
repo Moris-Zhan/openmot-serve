@@ -1,12 +1,15 @@
+import logging
 import tempfile
 import time
 from collections.abc import Callable
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from app.upload import UploadLimits, UploadRejected, UploadTooLarge, unpack_upload
 from jobs.layout import StorageError, StorageLayout, new_job_id, publish_frames, remove_job, staged_frames
+from jobs.object_store import ObjectNotFound, ObjectStore, job_prefix, result_key, upload_frames
 from jobs.record import JobRecord, JobStatus, new_job
 from jobs.store import JobStore
 from metrics.definitions import Metrics
@@ -14,6 +17,22 @@ from metrics.http import MetricsMiddleware
 
 Enqueue = Callable[[str], None]
 PingQueue = Callable[[], None]
+logger = logging.getLogger(__name__)
+
+
+def _discard_objects(objects: ObjectStore, job_id: str) -> None:
+    try:
+        objects.delete_prefix(job_prefix(job_id))
+    except Exception as error:
+        logger.error("could not clean up the objects under %s: %s", job_prefix(job_id), type(error).__name__)
+
+
+def _store_frames(objects: ObjectStore, job_id: str, staging: Path) -> None:
+    try:
+        upload_frames(objects, job_id, staging)
+    except Exception as error:
+        _discard_objects(objects, job_id)
+        raise StorageError(f"cannot upload the frames of job {job_id}: {type(error).__name__}") from error
 
 
 def _submit(
@@ -23,12 +42,16 @@ def _submit(
     limits: UploadLimits,
     enqueue: Enqueue,
     clock: Callable[[], float],
+    objects: ObjectStore | None = None,
 ) -> dict[str, str]:
     job_id = new_job_id()
     try:
         with staged_frames(layout) as staging:
             unpack_upload(file.file, staging, limits)
-            publish_frames(layout, job_id, staging)
+            if objects is None:
+                publish_frames(layout, job_id, staging)
+            else:
+                _store_frames(objects, job_id, staging)
     except UploadTooLarge as error:
         raise HTTPException(status_code=413, detail=str(error)) from error
     except UploadRejected as error:
@@ -39,7 +62,10 @@ def _submit(
     try:
         enqueue(job_id)
     except Exception as error:
-        remove_job(layout, job_id)
+        if objects is None:
+            remove_job(layout, job_id)
+        else:
+            _discard_objects(objects, job_id)
         store.transition(job_id, JobStatus.FAILED, clock(), reason="the job could not be put on the queue")
         raise HTTPException(status_code=503, detail="the job queue is unavailable, try again later") from error
     return {"job_id": job_id, "status": JobStatus.QUEUED.value}
@@ -62,18 +88,26 @@ def _status_body(record: JobRecord) -> dict[str, object]:
     }
 
 
-def _result_text(record: JobRecord, layout: StorageLayout) -> str:
+def _result_text(record: JobRecord, layout: StorageLayout, objects: ObjectStore | None = None) -> str:
     if record.status is JobStatus.FAILED:
         raise HTTPException(status_code=410, detail=f"job {record.job_id} failed: {record.reason}")
     if record.status is not JobStatus.SUCCEEDED:
         raise HTTPException(status_code=409, detail=f"job {record.job_id} is {record.status.value}, not finished yet")
+    if objects is not None:
+        try:
+            return objects.read_bytes(result_key(record.job_id)).decode()
+        except ObjectNotFound as error:
+            raise HTTPException(status_code=500, detail=f"result of job {record.job_id} is missing") from error
+        except Exception as error:
+            detail = f"result of job {record.job_id} could not be read from the object store"
+            raise HTTPException(status_code=500, detail=detail) from error
     try:
         return layout.result_path(record.job_id).read_text()
     except OSError as error:
         raise HTTPException(status_code=500, detail=f"result of job {record.job_id} is missing") from error
 
 
-def _health_problems(layout: StorageLayout, ping_queue: PingQueue) -> list[str]:
+def _health_problems(layout: StorageLayout, ping_queue: PingQueue, objects: ObjectStore | None = None) -> list[str]:
     problems: list[str] = []
     try:
         ping_queue()
@@ -85,6 +119,11 @@ def _health_problems(layout: StorageLayout, ping_queue: PingQueue) -> list[str]:
             pass
     except OSError as error:
         problems.append(f"storage is not writable: {error}")
+    if objects is not None:
+        try:
+            objects.check()
+        except Exception as error:
+            problems.append(str(error))
     return problems
 
 
@@ -96,6 +135,7 @@ def create_app(
     ping_queue: PingQueue,
     clock: Callable[[], float] = time.time,
     metrics: Metrics | None = None,
+    objects: ObjectStore | None = None,
 ) -> FastAPI:
     app = FastAPI(title="openmot-serve")
     if metrics is not None:
@@ -103,7 +143,7 @@ def create_app(
 
     @app.post("/jobs", status_code=202)
     def submit_job(file: UploadFile) -> dict[str, str]:
-        return _submit(file, store, layout, limits, enqueue, clock)
+        return _submit(file, store, layout, limits, enqueue, clock, objects)
 
     @app.get("/jobs/{job_id}")
     def job_status(job_id: str) -> dict[str, object]:
@@ -111,11 +151,11 @@ def create_app(
 
     @app.get("/jobs/{job_id}/result", response_class=PlainTextResponse)
     def job_result(job_id: str) -> str:
-        return _result_text(_known_job(store, job_id), layout)
+        return _result_text(_known_job(store, job_id), layout, objects)
 
     @app.get("/health")
     def health() -> JSONResponse:
-        problems = _health_problems(layout, ping_queue)
+        problems = _health_problems(layout, ping_queue, objects)
         if problems:
             return JSONResponse(status_code=503, content={"status": "unavailable", "problems": problems})
         return JSONResponse(content={"status": "ok"})
