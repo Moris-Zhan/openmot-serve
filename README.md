@@ -15,6 +15,7 @@ Multi-object tracking (MOT17/MOT20) as a production service: FastAPI + Docker + 
 | Observability | Prometheus metrics and Grafana dashboards for latency, throughput and job failures |
 | Inference optimization | PyTorch, ONNX and TensorRT backends; INT8 quantization with before/after latency and HOTA (measured, judged not recommended) |
 | Engineering judgement | Detector chosen for license compatibility ([ADR-0001](docs/adr/0001-detector-yolox-for-license.md)) |
+| LLM application _(planned)_ | Natural-language queries over tracking results through a local LLM with tool calling; the local model is being selected first, nothing is served yet |
 
 ## How it works
 
@@ -210,7 +211,7 @@ The Grafana dashboard is provisioned by the Compose monitoring overlay (see [`do
 ### Later
 - [x] MOT20 benchmark (PyTorch FP16 on the validation half, tracker parameters reused from MOT17; see [`docs/evaluation.md`](docs/evaluation.md))
 - [x] S3-compatible storage (optional backend, Compose only; verified end to end against a pinned RustFS image (`rustfs/rustfs:1.0.6`), not MinIO or AWS S3; see [`docs/service.md`](docs/service.md))
-- [ ] Natural-language queries over tracking results (RAG agent)
+- [ ] LLM agent for natural-language queries over tracking results (tool calling with a local LLM; the answers are computed by code from `result.txt`, so there is no vector retrieval, and the earlier "RAG agent" name no longer applies). In progress: choosing the local model (OpenSpec change `select-local-llm-for-agent`); the agent itself is not built
 
 ## Data
 

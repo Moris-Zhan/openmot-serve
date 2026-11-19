@@ -37,7 +37,7 @@
 - **THEN** 合成序列的題目涵蓋空結果、單一身分、身分中斷後重現、同一影格大量身分
 
 ### Requirement: Each candidate is scored on four metrics over repeated trials without a single combined score
-每個候選 SHALL 以溫度 0、固定的隨機種子，對每一題執行 3 次，所有次數都計入統計。評分 SHALL 回報四項指標：工具呼叫格式正確率（工具名稱屬於固定集合且參數通過型別與必填檢查）、答案正確率、拒答正確率（不可回答的題目必須拒答並指出正確類別，可回答的題目不得拒答）、延遲中位數。SHALL NOT 把它們合成單一分數。每次試驗的原始結果 SHALL 被保存。
+每個候選 SHALL 以溫度 0、固定的隨機種子，對每一題執行 3 次，所有次數都計入統計。評分 SHALL 回報四項指標：工具呼叫格式正確率（工具名稱屬於固定集合且參數通過型別與必填檢查）、答案正確率、拒答正確率（只計不可回答的題目：必須拒答並指出正確類別；對可回答的題目拒答則計入答案正確率，見下方情境）、延遲中位數。SHALL NOT 把它們合成單一分數。每次試驗的原始結果 SHALL 被保存。
 
 #### Scenario: A malformed tool call is counted
 - **WHEN** 模型呼叫不存在的工具，或缺少必填參數

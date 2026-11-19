@@ -4,6 +4,7 @@ data/MOT17/
 data/MOT17_sample/
 data/MOT20/
 data/results/
+data/llm_eval/
 # Model weights and exported engines
 *.pt
 *.pth
