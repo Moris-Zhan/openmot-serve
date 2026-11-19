@@ -33,6 +33,8 @@
 - [x] 5.3 先寫失敗的測試（新檔 `tests/test_llm_eval_run.py`）：命令列的子命令 `questions`（產生題目）、`measure-worker`（量 worker 顯存）、`run`（對一個候選評估）、`cleanup`；`run` 對未列入使用者確認清單的模型名稱拒絕執行；沒有 `--confirmed-candidates` 檔案時 `run` 與拉取都拒絕；輸出每個候選的原始結果與彙總 JSON；結束碼在拒絕與失敗時非 0。驗證：新測試先失敗。
 - [x] 5.4 實作 `llm_eval/run.py`。驗證：5.3 通過，`ruff check` 與 `ruff format --check`（新檔案）乾淨，預設 `pytest` 通過。
 
+- [x] 5.5 （實作中新增）GPU 空閒檢查：先寫失敗的測試再實作 `run` 與 `measure-worker` 的等待、每題區塊的丟棄重做、無法讀取時拒絕、等待上限，摘要記錄 `idle_check`。驗證：`tests/test_llm_eval_run.py` 新增的情境通過，ruff 乾淨。
+
 ## 6. 查證候選（不拉取）
 
 - [x] 6.1 查證候選：從 Ollama 目錄與模型卡確認 3–4 個模型的工具呼叫支援、授權（優先 Apache 2.0 或 MIT）、量化後大小與載入顯存估計；同時查證 Ollama 映像在 Docker Hub 的最新穩定標籤與摘要。產出表格（來源、授權、大小、預估顯存）與預計的下載總量。驗證：表格每一列都附來源連結與查證日期；沒有任何模型被拉取，`docker images` 沒有新增項目。

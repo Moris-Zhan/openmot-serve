@@ -2,6 +2,7 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -29,6 +30,12 @@ DEFAULT_RESULTS_ROOT = Path("data/results")
 DEFAULT_BASE_URL = f"http://{docker.HOST}:{docker.DEFAULT_PORT}"
 PULL_TIMEOUT_SECONDS = 7200.0
 GIB_MIB = 1024
+MIB = 1024 * 1024
+DEFAULT_IDLE_TOLERANCE_MIB = 2048
+DEFAULT_POLL_SECONDS = 30.0
+DEFAULT_MAX_WAIT_SECONDS = 43200.0
+MAX_BLOCK_ATTEMPTS = 3
+ANNOUNCE_EVERY_POLLS = 20
 
 
 def _subprocess_runner(command: list[str]) -> subprocess.CompletedProcess[str]:
@@ -50,6 +57,7 @@ class Dependencies:
     client_factory: Callable[[str], Any] = _default_client
     runner: docker.Runner = _subprocess_runner
     read_gpu_memory: Callable[[], int | None] = _default_gpu_reading
+    sleep: Callable[[float], None] = time.sleep
 
 
 def _fail(message: str, code: int = 2) -> int:
@@ -100,6 +108,50 @@ def _size_vram_gib(listing: dict[str, Any], model: str) -> float | None:
     return None
 
 
+@dataclass
+class IdleCheck:
+    waits: int = 0
+    waited_seconds: float = 0.0
+    discarded_blocks: int = 0
+
+
+def _other_gpu_use_mib(client: Any, dependencies: Dependencies) -> int | None:
+    """GPU memory in use that does not belong to the model being evaluated."""
+    used = dependencies.read_gpu_memory()
+    if used is None:
+        return None
+    ours = 0
+    if client is not None:
+        ours = sum(entry.get("size_vram", 0) for entry in client.ps().get("models", [])) // MIB
+    return used - ours
+
+
+def _gpu_is_idle(client: Any, dependencies: Dependencies, tolerance_mib: int) -> bool:
+    other = _other_gpu_use_mib(client, dependencies)
+    return other is not None and other <= tolerance_mib
+
+
+def _wait_for_idle(
+    client: Any, dependencies: Dependencies, arguments: argparse.Namespace, check: IdleCheck
+) -> str | None:
+    waited, polls = 0.0, 0
+    while True:
+        other = _other_gpu_use_mib(client, dependencies)
+        if other is None:
+            return "cannot verify that the GPU is idle: its memory could not be read"
+        if other <= arguments.idle_tolerance_mib:
+            return None
+        if waited >= arguments.max_wait_seconds:
+            return f"the GPU was not idle after waiting {waited:.0f}s: another process uses {other} MiB"
+        if polls % ANNOUNCE_EVERY_POLLS == 0:
+            print(f"waiting for the GPU to become idle: another process uses {other} MiB", file=sys.stderr)
+        dependencies.sleep(arguments.poll_seconds)
+        waited += arguments.poll_seconds
+        polls += 1
+        check.waits += 1
+        check.waited_seconds += arguments.poll_seconds
+
+
 def _questions(arguments: argparse.Namespace, dependencies: Dependencies) -> int:
     path = build_question_set(arguments.real, arguments.output_dir, arguments.seed)
     print(path)
@@ -107,6 +159,9 @@ def _questions(arguments: argparse.Namespace, dependencies: Dependencies) -> int
 
 
 def _measure_worker(arguments: argparse.Namespace, dependencies: Dependencies) -> int:
+    problem = _wait_for_idle(None, dependencies, arguments, IdleCheck())
+    if problem:
+        return _fail(problem, 1)
     run_name = arguments.run_name or datetime.now(UTC).strftime("llm-eval-worker-%Y%m%dT%H%M%SZ")
     command = [
         sys.executable, "-m", "eval.latency", "--precision", "fp16", "--results-root", str(arguments.results_root),
@@ -183,6 +238,10 @@ def _run(arguments: argparse.Namespace, dependencies: Dependencies) -> int:
         client.unload_all()
     except OllamaError as error:
         return _fail(f"cannot unload the previously loaded models: {error}", 1)
+    check = IdleCheck()
+    problem = _wait_for_idle(client, dependencies, arguments, check)
+    if problem:
+        return _fail(problem, 1)
     gpu_before = dependencies.read_gpu_memory()
     first = questions[0]
     trials: list[Trial] = [run_trial(client, arguments.model, first, detections[first.source], 0, warmup=True)]
@@ -193,8 +252,20 @@ def _run(arguments: argparse.Namespace, dependencies: Dependencies) -> int:
     except OllamaError as error:
         return _fail(f"cannot read model information: {error}", 1)
     for question in questions:
-        for run_index in range(arguments.runs):
-            trials.append(run_trial(client, arguments.model, question, detections[question.source], run_index))
+        for _ in range(MAX_BLOCK_ATTEMPTS):
+            problem = _wait_for_idle(client, dependencies, arguments, check)
+            if problem:
+                return _fail(problem, 1)
+            block = [
+                run_trial(client, arguments.model, question, detections[question.source], run_index)
+                for run_index in range(arguments.runs)
+            ]
+            if _gpu_is_idle(client, dependencies, arguments.idle_tolerance_mib):
+                trials.extend(block)
+                break
+            check.discarded_blocks += 1
+        else:
+            return _fail(f"the GPU was disturbed by another process while measuring {question.id}", 1)
     metrics = asdict(aggregate(questions, trials))
     gpu_delta = None if gpu_before is None or gpu_after is None else gpu_after - gpu_before
     candidates = [
@@ -217,6 +288,12 @@ def _run(arguments: argparse.Namespace, dependencies: Dependencies) -> int:
         },
         "passed": not failed,
         "failed_thresholds": failed,
+        "idle_check": {
+            "tolerance_mib": arguments.idle_tolerance_mib,
+            "waits": check.waits,
+            "waited_seconds": check.waited_seconds,
+            "discarded_blocks": check.discarded_blocks,
+        },
     }
     for folder, document in (
         ("raw", {"model": arguments.model, "trials": [asdict(t) for t in trials]}),
@@ -278,6 +355,9 @@ def build_parser() -> argparse.ArgumentParser:
     worker.add_argument("--output-dir", type=Path, required=True)
     worker.add_argument("--results-root", type=Path, default=DEFAULT_RESULTS_ROOT)
     worker.add_argument("--run-name")
+    worker.add_argument("--idle-tolerance-mib", type=int, default=DEFAULT_IDLE_TOLERANCE_MIB)
+    worker.add_argument("--poll-seconds", type=float, default=DEFAULT_POLL_SECONDS)
+    worker.add_argument("--max-wait-seconds", type=float, default=DEFAULT_MAX_WAIT_SECONDS)
     worker.set_defaults(handler=_measure_worker)
 
     snapshot = commands.add_parser("snapshot", help="save docker containers, volumes and images")
@@ -309,6 +389,9 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--output-dir", type=Path, required=True)
     evaluate.add_argument("--base-url", default=DEFAULT_BASE_URL)
     evaluate.add_argument("--runs", type=int, default=DEFAULT_RUNS)
+    evaluate.add_argument("--idle-tolerance-mib", type=int, default=DEFAULT_IDLE_TOLERANCE_MIB)
+    evaluate.add_argument("--poll-seconds", type=float, default=DEFAULT_POLL_SECONDS)
+    evaluate.add_argument("--max-wait-seconds", type=float, default=DEFAULT_MAX_WAIT_SECONDS)
     evaluate.set_defaults(handler=_run)
 
     select = commands.add_parser("select", help="apply the thresholds and the selection rule")

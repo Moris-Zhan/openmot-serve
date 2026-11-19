@@ -76,8 +76,8 @@ def workspace(tmp_path: Path) -> dict[str, Path]:
     }
 
 
-def _deps(client: object) -> run.Dependencies:
-    return run.Dependencies(client_factory=lambda url: client, read_gpu_memory=lambda: 3000)
+def _deps(client: object, read=lambda: 3000, sleep=lambda seconds: None) -> run.Dependencies:  # noqa: B008
+    return run.Dependencies(client_factory=lambda url: client, read_gpu_memory=read, sleep=sleep)
 
 
 def _run_args(workspace: dict[str, Path], model: str = MODEL, confirmed: bool = True) -> list[str]:
@@ -179,7 +179,7 @@ def test_measure_worker_runs_the_latency_tool_and_records_the_memory_deltas(tmp_
         return subprocess.CompletedProcess(command, 0, "", "")
 
     arguments = ["measure-worker", "--output-dir", str(tmp_path / "out"), "--results-root", str(results_root)]
-    assert run.main(arguments, run.Dependencies(runner=runner)) == 0
+    assert run.main(arguments, run.Dependencies(runner=runner, read_gpu_memory=lambda: 0)) == 0
     assert commands[0][1:3] == ["-m", "eval.latency"] and "fp16" in commands[0]
     recorded = json.loads((tmp_path / "out" / "worker_memory.json").read_text())
     assert recorded["load_delta_mib"] == 2500 and recorded["run_delta_mib"] == 3100
@@ -195,7 +195,7 @@ def test_measure_worker_fails_when_the_gpu_memory_is_unavailable(tmp_path: Path,
         return subprocess.CompletedProcess(command, 0, "", "")
 
     arguments = ["measure-worker", "--output-dir", str(tmp_path / "out"), "--results-root", str(results_root)]
-    assert run.main(arguments, run.Dependencies(runner=runner)) != 0
+    assert run.main(arguments, run.Dependencies(runner=runner, read_gpu_memory=lambda: 0)) != 0
     assert "gpu memory" in capsys.readouterr().err.lower()
 
 
@@ -213,3 +213,105 @@ def test_cleanup_removes_only_dedicated_resources(tmp_path: Path) -> None:
     ]
     assert run.main(["cleanup", "--keep-models"], run.Dependencies(runner=runner)) == 0
     assert commands[-1] == ["docker", "rm", "-f", "openmot-llm-eval"]
+
+
+BUSY_MIB, IDLE_MIB = 17000, 500
+
+
+def _chat_count(client: OracleClient) -> int:
+    return sum(1 for request in client.requests if "messages" in request)
+
+
+def test_run_waits_while_another_process_is_using_the_gpu(workspace: dict[str, Path], capsys) -> None:
+    client = OracleClient(load_questions(workspace["questions"].read_text()))
+    readings = iter([BUSY_MIB, BUSY_MIB, IDLE_MIB])
+    state = {"last": IDLE_MIB}
+
+    def read() -> int:
+        state["last"] = next(readings, IDLE_MIB)
+        return state["last"]
+
+    sleeps: list[float] = []
+    assert run.main(_run_args(workspace) + ["--poll-seconds", "7"], _deps(client, read, sleeps.append)) == 0
+    assert sleeps[:2] == [7.0, 7.0]
+    summary = json.loads((workspace["out"] / "summary" / "good-model_7b.json").read_text())
+    assert summary["idle_check"]["waits"] == 2 and summary["idle_check"]["waited_seconds"] == 14.0
+    assert "GPU" in capsys.readouterr().err
+
+
+def test_run_never_starts_when_the_gpu_stays_busy_until_the_limit(workspace: dict[str, Path], capsys) -> None:
+    client = OracleClient(load_questions(workspace["questions"].read_text()))
+    arguments = _run_args(workspace) + ["--poll-seconds", "10", "--max-wait-seconds", "30"]
+    assert run.main(arguments, _deps(client, lambda: BUSY_MIB)) != 0
+    assert _chat_count(client) == 0
+    assert "not idle" in capsys.readouterr().err and not (workspace["out"] / "summary").exists()
+
+
+def test_run_refuses_when_the_gpu_memory_cannot_be_read(workspace: dict[str, Path], capsys) -> None:
+    client = OracleClient(load_questions(workspace["questions"].read_text()))
+    assert run.main(_run_args(workspace), _deps(client, lambda: None)) != 0
+    assert _chat_count(client) == 0
+    assert "cannot verify" in capsys.readouterr().err
+
+
+def test_the_loaded_model_itself_is_not_counted_as_another_process(workspace: dict[str, Path]) -> None:
+    client = OracleClient(load_questions(workspace["questions"].read_text()))
+    sleeps: list[float] = []
+    # 6 GiB of the reading is the evaluated model (reported by ps), the rest is below the tolerance
+    assert run.main(_run_args(workspace), _deps(client, lambda: 6 * 1024 + 800, sleeps.append)) == 0
+    assert sleeps == []
+
+
+def test_a_block_measured_while_another_process_started_is_discarded_and_repeated(workspace: dict[str, Path]) -> None:
+    questions = load_questions(workspace["questions"].read_text())
+    state = {"busy": False, "triggered": False}
+
+    class Disturbed(OracleClient):
+        rewind_to: int | None = None
+
+        def chat(self, payload: dict) -> dict:
+            if _chat_count(self) >= 20 and not state["triggered"]:
+                state["busy"], state["triggered"] = True, True
+                self.rewind_to = 3 * ((self.trial - 1) // 3)
+            return super().chat(payload)
+
+    client = Disturbed(questions)
+
+    def read() -> int:
+        return BUSY_MIB if state["busy"] else IDLE_MIB
+
+    def sleep(seconds: float) -> None:
+        # the discarded block is measured again, so the fake model must answer the same question again
+        if client.rewind_to is not None:
+            client.trial, client.rewind_to = client.rewind_to, None
+        state["busy"] = False
+
+    assert run.main(_run_args(workspace), _deps(client, read, sleep)) == 0
+    summary = json.loads((workspace["out"] / "summary" / "good-model_7b.json").read_text())
+    raw = json.loads((workspace["out"] / "raw" / "good-model_7b.json").read_text())
+    assert summary["idle_check"]["discarded_blocks"] == 1 and summary["idle_check"]["waits"] >= 1
+    assert len([trial for trial in raw["trials"] if not trial["warmup"]]) == 3 * len(questions)
+    assert summary["metrics"]["answer_correctness"] == 1.0
+
+
+def test_a_block_that_keeps_being_disturbed_fails_the_run(workspace: dict[str, Path], capsys) -> None:
+    questions = load_questions(workspace["questions"].read_text())
+    state = {"busy": False}
+
+    class AlwaysDisturbed(OracleClient):
+        def chat(self, payload: dict) -> dict:
+            if _chat_count(self) >= 20:
+                state["busy"] = True
+            return super().chat(payload)
+
+    def sleep(seconds: float) -> None:
+        state["busy"] = False
+
+    assert (
+        run.main(
+            _run_args(workspace),
+            _deps(AlwaysDisturbed(questions), lambda: BUSY_MIB if state["busy"] else IDLE_MIB, sleep),
+        )
+        != 0
+    )
+    assert "disturbed" in capsys.readouterr().err

@@ -73,6 +73,21 @@
 - **WHEN** 某候選載入後超過 16 GB
 - **THEN** 報告記錄它的指標，並註明因顯存不可與 worker 共存而不作為預設
 
+### Requirement: Measurements are taken only while no other process is using the GPU
+評估與 worker 顯存量測 SHALL 只在沒有其他程序使用 GPU 時進行：被評估的模型以外的 GPU 記憶體用量超過容許值（預設 2048 MiB）時，SHALL 暫停並輪詢等待，不得開始量測。每一題的三次試驗結束後 SHALL 再檢查一次；在量測期間有其他程序出現時，該題的試驗 SHALL 被丟棄並在 GPU 空閒後重做（最多三次，仍被干擾則評估失敗並回報）。無法讀取 GPU 記憶體時 SHALL 拒絕執行，等待超過上限時 SHALL 失敗並回報。摘要 SHALL 記錄等待次數、等待秒數與被丟棄的題目區塊數。
+
+#### Scenario: The evaluation waits for another process to finish
+- **WHEN** 開始評估時另一個程序佔用 GPU
+- **THEN** 評估不送出任何問題，持續輪詢直到 GPU 空閒才開始，摘要記錄等待次數與秒數
+
+#### Scenario: A disturbed block is measured again
+- **WHEN** 某一題的三次試驗期間有其他程序開始使用 GPU
+- **THEN** 該題的試驗不被計入統計，在 GPU 空閒後重做，摘要記錄被丟棄的區塊數
+
+#### Scenario: The GPU state cannot be verified
+- **WHEN** 無法讀取 GPU 記憶體
+- **THEN** 評估拒絕開始並說明無法確認 GPU 是否空閒
+
 ### Requirement: Candidates are confirmed by the user before anything is pulled
 候選模型 SHALL 先經查證（支援工具呼叫、本機可跑、授權清楚，優先 Apache 2.0 或 MIT），並向使用者列出來源、大小與授權及預計的下載總量。在使用者確認名單之前，SHALL NOT 拉取任何模型。
 
