@@ -76,6 +76,27 @@ flowchart LR
 | Monitoring | Prometheus + Grafana | Latency, throughput, job failures; compose overlay; Kubernetes manifests written, not verified on a cluster |
 | CI | GitHub Actions | Lint, test, build image |
 
+## CI/CD pipeline
+
+```mermaid
+flowchart LR
+    TRIG["push / pull_request<br/>permissions: contents: read<br/>a newer push cancels the older run, except on main"]
+    TRIG --> lint
+    TRIG --> test
+    TRIG --> buildapi
+    lint["lint<br/>ruff check ."]
+    test["test<br/>CPU PyTorch, install package<br/>kubectl, kustomize, kubeconform, promtool<br/>sha256 check, 5 download retries<br/>python -m pytest"]
+    buildapi["build-api<br/>build api image, no push<br/>smoke test: import app.run"]
+    lint --> publish
+    test --> publish
+    buildapi --> publish
+    publish["publish<br/>only on push to main<br/>packages: write"]
+    publish --> API[("ghcr.io/owner/openmot-api<br/>tags: sha, main")]
+    publish --> WRK[("ghcr.io/owner/openmot-worker<br/>tags: sha, main")]
+```
+
+`lint`, `test` and `build-api` run in parallel on every push and pull request. `publish` waits for all three (`needs`), so one failing job skips it, and it runs only for a push to `main`, the only place that holds `packages: write`. The tool downloads in `test` are verified against fixed sha256 values and retried up to five times, which also covers a transient HTTP 403 or 5xx from the download host. The worker image is built and pushed by `publish` but not smoke-tested in CI, and the TensorRT worker image is never built there.
+
 ## API
 
 | Method | Path | Description |
