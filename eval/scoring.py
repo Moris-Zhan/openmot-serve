@@ -15,6 +15,7 @@ from tracking.files import write_text_atomic
 from tracking.motchallenge import ResultFormatError, format_result, parse_result
 
 TRACKER_NAME = "result"
+SUPPORTED_BENCHMARKS = ("MOT17", "MOT20")
 
 
 class ScoringError(RuntimeError):
@@ -85,8 +86,13 @@ def _scores_from(metrics: Mapping[str, Mapping[str, object]]) -> Scores:
 
 
 def score_sequences(
-    sequence_dirs: Mapping[str, Path], result_files: Mapping[str, Path], workspace: Path
+    sequence_dirs: Mapping[str, Path],
+    result_files: Mapping[str, Path],
+    workspace: Path,
+    benchmark: str = "MOT17",
 ) -> ScoreReport:
+    if benchmark not in SUPPORTED_BENCHMARKS:
+        raise ScoringError(f"unsupported benchmark {benchmark!r}, expected one of {', '.join(SUPPORTED_BENCHMARKS)}")
     if not sequence_dirs:
         raise ScoringError("no sequences to score")
     _stage(sequence_dirs, result_files, workspace)
@@ -97,7 +103,7 @@ def score_sequences(
             "OUTPUT_FOLDER": str(workspace / "out"),
             "SEQMAP_FILE": str(workspace / "seqmap.txt"),
             "TRACKERS_TO_EVAL": [TRACKER_NAME],
-            "BENCHMARK": "MOT17",
+            "BENCHMARK": benchmark,
             "SPLIT_TO_EVAL": "train",
             "SKIP_SPLIT_FOL": True,
             "PRINT_CONFIG": False,

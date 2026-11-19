@@ -14,10 +14,10 @@ from eval.detection_cache import CacheKey, detect_with_cache
 from eval.halves import HalfError, materialize_half
 from eval.scoring import ScoreReport, Scores, ScoringError, score_sequences
 from eval.split import split_sequence
-from eval.tuning import TuningError, TuningResult, TuningSequence, tune_parameters, write_params
+from eval.tuning import TuningError, TuningResult, TuningSequence, read_params, tune_parameters, write_params
 from inference.artifacts import ArtifactError, ArtifactInfo
 from inference.backends import BackendError, describe_artifact, resolve_backend_artifact
-from tracking.bytetrack import run_tracker
+from tracking.bytetrack import TrackerParams, run_tracker
 from tracking.config import SUPPORTED_BACKENDS, SUPPORTED_PRECISIONS
 from tracking.detector import DetectorSettings
 from tracking.env_check import (
@@ -36,6 +36,17 @@ from tracking.yolox import WEIGHTS_ID, WEIGHTS_SHA256, WeightsIntegrityError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SEQUENCES = tuple(f"MOT17-{number}-FRCNN" for number in ("02", "04", "05", "09", "10", "11", "13"))
+MOT20_SEQUENCES = ("MOT20-01", "MOT20-02", "MOT20-03", "MOT20-05")
+BENCHMARK_DEFAULTS = {
+    "MOT17": (PROJECT_ROOT / "data" / "MOT17", DEFAULT_SEQUENCES),
+    "MOT20": (PROJECT_ROOT / "data" / "MOT20", MOT20_SEQUENCES),
+}
+
+
+def benchmark_defaults(benchmark: str) -> tuple[Path, tuple[str, ...]]:
+    if benchmark not in BENCHMARK_DEFAULTS:
+        raise ValueError(f"unsupported benchmark {benchmark!r}, expected one of {', '.join(BENCHMARK_DEFAULTS)}")
+    return BENCHMARK_DEFAULTS[benchmark]
 
 
 class BenchmarkError(RuntimeError):
@@ -53,6 +64,8 @@ class BenchmarkConfig:
     sequences: tuple[str, ...] = DEFAULT_SEQUENCES
     backend: str = "torch"
     engine: Path | None = None
+    benchmark: str = "MOT17"
+    params_file: Path | None = None
 
 
 ArtifactResolver = Callable[[str, DetectorSettings, Path, Path | None], ArtifactInfo | None]
@@ -112,7 +125,7 @@ def _tune(
             cache_dir, key, f"{name}-tuning", destination / "img1", detect_frame
         )
         sequences.append(TuningSequence(name, tuning_half, destination, detections))
-    return tune_parameters(sequences, run_dir / "tuning")
+    return tune_parameters(sequences, run_dir / "tuning", benchmark=config.benchmark)
 
 
 def _validate(
@@ -121,7 +134,7 @@ def _validate(
     key: CacheKey,
     cache_dir: Path,
     detect_frame: DetectFrame,
-    tuning: TuningResult,
+    params: TrackerParams,
 ) -> ScoreReport:
     sequence_dirs: dict[str, Path] = {}
     result_files: dict[str, Path] = {}
@@ -134,10 +147,10 @@ def _validate(
         )
         result_file = run_dir / "results" / f"{name}.txt"
         result_file.parent.mkdir(parents=True, exist_ok=True)
-        write_text_atomic(result_file, format_result(run_tracker(detections, tuning.best)))
+        write_text_atomic(result_file, format_result(run_tracker(detections, params)))
         sequence_dirs[name] = destination
         result_files[name] = result_file
-    return score_sequences(sequence_dirs, result_files, run_dir / "score")
+    return score_sequences(sequence_dirs, result_files, run_dir / "score", config.benchmark)
 
 
 def _scores_document(scores: Scores) -> dict[str, float]:
@@ -145,20 +158,23 @@ def _scores_document(scores: Scores) -> dict[str, float]:
 
 
 def _summary_document(
+    benchmark: str,
     settings: DetectorSettings,
-    tuning: TuningResult,
+    params: TrackerParams,
+    tuning: dict[str, object],
     report: ScoreReport,
     outcome: CheckOutcome,
     artifact: dict[str, object] | None = None,
 ) -> dict[str, object]:
     environment = outcome.report
     document = {
+        "benchmark": benchmark,
         "weights": {"id": WEIGHTS_ID, "sha256": WEIGHTS_SHA256},
         "backend": settings.backend,
         "precision": settings.precision,
         "detector": asdict(settings),
-        "tracker_params": asdict(tuning.best),
-        "tuning": {"combined_hota": tuning.best_hota, "combinations": len(tuning.trials)},
+        "tracker_params": asdict(params),
+        "tuning": tuning,
         "software": {
             "python": platform.python_version(),
             "numpy": np.__version__,
@@ -188,10 +204,12 @@ def _markdown_table(report: ScoreReport) -> str:
 def execute(config: BenchmarkConfig, dependencies: Dependencies) -> str:
     missing = _missing_sequences(config)
     if missing:
+        download = "data/download_mot.sh --with-mot20" if config.benchmark == "MOT20" else "data/download_mot.sh"
         raise BenchmarkError(
-            f"MOT17 sequences not found under {config.data_root}: {', '.join(missing)}. "
-            "Run data/download_mot.sh to download them."
+            f"{config.benchmark} sequences not found under {config.data_root}: {', '.join(missing)}. "
+            f"Run {download} to download them."
         )
+    reused = read_params(config.params_file) if config.params_file is not None else None
     outcome = dependencies.check_environment()
     if not outcome.passed:
         raise BenchmarkError("environment check failed:\n" + format_outcome(outcome))
@@ -206,11 +224,19 @@ def execute(config: BenchmarkConfig, dependencies: Dependencies) -> str:
     cache_dir = config.results_root / "cache"
     detect_frame = _lazy_detect_frame(dependencies.load_detect_frame, config, artifact)
 
-    tuning = _tune(config, run_dir, key, cache_dir, detect_frame)
-    write_params(run_dir / "params.json", tuning.best)
-    report = _validate(config, run_dir, key, cache_dir, detect_frame, tuning)
+    if reused is None:
+        tuned = _tune(config, run_dir, key, cache_dir, detect_frame)
+        params = tuned.best
+        tuning = {"combined_hota": tuned.best_hota, "combinations": len(tuned.trials)}
+    else:
+        params = reused
+        tuning = {"skipped": True, "params_file": str(config.params_file)}
+    write_params(run_dir / "params.json", params)
+    report = _validate(config, run_dir, key, cache_dir, detect_frame, params)
 
-    summary = _summary_document(settings, tuning, report, outcome, describe_artifact(config.backend, artifact))
+    summary = _summary_document(
+        config.benchmark, settings, params, tuning, report, outcome, describe_artifact(config.backend, artifact)
+    )
     write_text_atomic(run_dir / "summary.json", json.dumps(summary, indent=2, sort_keys=True) + "\n")
     table = _markdown_table(report)
     write_text_atomic(run_dir / "summary.md", table)
@@ -227,25 +253,32 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--engine", type=Path, help="explicit ONNX or engine file, default found by naming convention")
     parser.add_argument("--weights", type=Path, default=DEFAULT_WEIGHTS)
     parser.add_argument("--device", help="torch device, default cuda when available")
-    parser.add_argument("--data-root", type=Path, default=PROJECT_ROOT / "data" / "MOT17")
+    parser.add_argument("--benchmark", choices=tuple(BENCHMARK_DEFAULTS), default="MOT17")
+    parser.add_argument("--data-root", type=Path, help="default data/<benchmark>")
     parser.add_argument("--results-root", type=Path, default=PROJECT_ROOT / "data" / "results")
     parser.add_argument("--run-name", help="folder name under the results root, default a UTC timestamp")
-    parser.add_argument("--sequences", nargs="+", default=list(DEFAULT_SEQUENCES))
+    parser.add_argument(
+        "--params", type=Path, help="reuse this params.json and skip tuning, e.g. the file of a MOT17 run"
+    )
+    parser.add_argument("--sequences", nargs="+", help="default the labelled training sequences of the benchmark")
     return parser
 
 
 def main(argv: Sequence[str] | None = None, dependencies: Dependencies | None = None) -> int:
     arguments = build_parser().parse_args(argv)
+    default_root, default_sequences = benchmark_defaults(arguments.benchmark)
     config = BenchmarkConfig(
-        data_root=arguments.data_root,
+        data_root=arguments.data_root or default_root,
         results_root=arguments.results_root,
         run_name=arguments.run_name or datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ"),
         precision=arguments.precision,
         weights=arguments.weights,
         device=arguments.device or ("cuda" if torch.cuda.is_available() else "cpu"),
-        sequences=tuple(arguments.sequences),
+        sequences=tuple(arguments.sequences or default_sequences),
         backend=arguments.backend,
         engine=arguments.engine,
+        benchmark=arguments.benchmark,
+        params_file=arguments.params,
     )
     try:
         table = execute(config, dependencies or default_dependencies())

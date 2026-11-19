@@ -140,7 +140,7 @@ MOT17 test-set ground truth is not public, so each MOT17 training sequence is sp
 - **Tuning half** (first half of each sequence): choose tracker parameters
 - **Validation half** (second half): report scores with TrackEval
 
-MOT20 is evaluated after v0.5.
+MOT20 uses the same protocol on its four labelled training sequences (`MOT20-01`, `02`, `03`, `05`), scored with TrackEval's MOT20 convention. Its tracker parameters are reused from the MOT17 run rather than tuned on MOT20, see the MOT20 results below.
 
 ## Results
 
@@ -152,6 +152,14 @@ MOT20 is evaluated after v0.5.
 | YOLOX | ByteTrack | INT8 | 49.27 | 45.13 | 58.14 |
 
 COCO 預訓練權重，未針對 MOT17 微調；數字不可與 ByteTrack 論文並列比較。7 個 FRCNN 訓練序列的合併分數，重現方式見 [`docs/evaluation.md`](docs/evaluation.md)。FP16 列是 PyTorch；INT8 列是 TensorRT 訓練後量化（INT8 搭配 FP16），HOTA 比 PyTorch FP16 低 1.51，超過事先訂下的 1.0 門檻，所以標為不建議。
+
+### Tracking accuracy — MOT20 validation half
+
+| Detector | Tracker | Precision | HOTA | MOTA | IDF1 |
+|---|---|---|---|---|---|
+| YOLOX | ByteTrack | FP16 | 33.90 | 37.06 | 46.58 |
+
+PyTorch FP16，4 個訓練序列（`MOT20-01`、`02`、`03`、`05`）的合併分數。追蹤器參數沿用 MOT17 FP16 那次調出的值（`--params data/results/full-fp16-3/params.json`），未針對 MOT20 調整，所以 MOT20 的 Tuning Half 沒有被使用；MOT20 是高密度人群，這組參數在這裡不一定最佳。偵測器是 COCO 預訓練權重，未微調；數字不可與 ByteTrack 論文並列比較，也不可與上表 MOT17 的數字視為同一個條件下的比較。計分用 TrackEval 的 MOT20 慣例（`non_mot_vehicle` 與其他干擾物一樣被忽略）。兩次執行（`mot20-fp16-3`、`mot20-fp16-4`）的分數與結果檔逐位元組相同，但兩次的偵測都來自快取（推論只在較早、已被取代的一次跑過），並沒有重新推論。MOT20 的延遲與吞吐量未量測，ONNX、TensorRT、INT8 也沒有 MOT20 的數字。每個序列的分數與重現方式見 [`docs/evaluation.md`](docs/evaluation.md)。
 
 ### Serving performance — RTX 5090
 
@@ -200,7 +208,7 @@ The Grafana dashboard is provisioned by the Compose monitoring overlay (see [`do
 - [x] Before/after comparison of latency, throughput and HOTA (PyTorch FP16 → TensorRT FP16 → TensorRT INT8; GPU memory is whole-GPU used memory measured with `nvidia-smi`)
 
 ### Later
-- [ ] MOT20 benchmark
+- [x] MOT20 benchmark (PyTorch FP16 on the validation half, tracker parameters reused from MOT17; see [`docs/evaluation.md`](docs/evaluation.md))
 - [ ] S3-compatible storage
 - [ ] Natural-language queries over tracking results (RAG agent)
 

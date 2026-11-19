@@ -44,7 +44,7 @@ Benchmark Run 的指令 SHALL 接受一個既有的追蹤器參數檔。指定�
 - **THEN** 該框不被算作誤報；同樣的資料以 MOT17 計分時則被算作誤報
 
 ### Requirement: The score summary records how it was produced
-分數摘要 SHALL 記錄偵測模型權重的識別資訊、推論後端、推論精度（例如 FP16）、所評測的 benchmark、最終追蹤參數、軟體版本與 GPU 型號，使不同次的結果可以被公平比較。略過調參而直接使用參數檔時，摘要 SHALL 註明參數來自參數檔且未調參，並記錄參數檔的名稱，使讀者不會把數字誤讀成針對該 benchmark 調過參。
+分數摘要 SHALL 記錄偵測模型權重的識別資訊、推論後端、推論精度（例如 FP16）、所評測的 benchmark、最終追蹤參數、軟體版本與 GPU 型號，使不同次的結果可以被公平比較。略過調參而直接使用參數檔時，摘要 SHALL 註明參數來自參數檔且未調參，並記錄使用者給的參數檔路徑，使讀者不會把數字誤讀成針對該 benchmark 調過參。
 
 #### Scenario: Summary metadata
 - **WHEN** 一次 Benchmark Run 完成
@@ -52,4 +52,4 @@ Benchmark Run 的指令 SHALL 接受一個既有的追蹤器參數檔。指定�
 
 #### Scenario: Parameters were not tuned for this benchmark
 - **WHEN** 一次 Benchmark Run 以參數檔完成
-- **THEN** 摘要記錄 benchmark、參數檔的名稱，並註明未調參
+- **THEN** 摘要記錄 benchmark、參數檔的路徑，並註明未調參

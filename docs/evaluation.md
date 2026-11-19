@@ -82,10 +82,12 @@ python -m eval.run --sequences MOT17-05-FRCNN MOT17-09-FRCNN --run-name quick-ch
 | `--precision` | 推論精度，`fp16` 或 `fp32` | `fp16` |
 | `--weights` | 權重檔路徑 | `models/yolox_x.pth` |
 | `--device` | torch 裝置 | 有 CUDA 時為 `cuda` |
-| `--data-root` | MOT17 根目錄 | `data/MOT17` |
+| `--benchmark` | `MOT17` 或 `MOT20`，決定預設的資料根目錄、預設序列與計分慣例 | `MOT17` |
+| `--data-root` | 資料根目錄 | `data/<benchmark>` |
+| `--params` | 使用既有的 `params.json` 並略過調參（見下方 MOT20 一節） | 未指定，照原流程調參 |
 | `--results-root` | 輸出根目錄 | `data/results` |
 | `--run-name` | 本次輸出的資料夾名稱 | UTC 時間戳 |
-| `--sequences` | 要評測的序列名稱 | 7 個 FRCNN 訓練序列 |
+| `--sequences` | 要評測的序列名稱 | MOT17：7 個 FRCNN 訓練序列；MOT20：`MOT20-01`、`02`、`03`、`05` |
 
 ## 輸出
 
@@ -108,6 +110,41 @@ python -m eval.run --sequences MOT17-05-FRCNN MOT17-09-FRCNN --run-name quick-ch
 偵測是最貴的步驟，因此結果快取在 `data/results/cache/`，各次執行共用。快取鍵包含權重 SHA-256、輸入尺寸、推論精度、NMS 設定與推論後端，任何一項改變都會重新偵測，舊的快取不受影響。不同後端的偵測結果不會互相沿用。
 
 相同的偵測輸入與相同的參數會產生逐位元組相同的結果檔。快取命中時偵測器甚至不會被載入。
+
+## MOT20
+
+MOT20 是高密度人群（單格上百個行人），用同一個指令與同一套切分、Validation Half 計分：
+
+```bash
+data/download_mot.sh --with-mot20      # 約 4.8 GB，授權 CC BY-NC-SA，不進版控
+python -m eval.run --benchmark MOT20 --params data/results/full-fp16-3/params.json --run-name mot20-fp16-3
+```
+
+預設序列是有公開標註的四個訓練序列：`MOT20-01`（429 幀）、`MOT20-02`（2782 幀）、`MOT20-03`（2405 幀）、`MOT20-05`（3315 幀），已對照下載後的 `data/MOT20/train/` 確認。MOT20 沒有 MOT17 的 `-FRCNN` 後綴，只有一組偵測版本。
+
+**計分慣例的差異。** 選 `--benchmark MOT20` 時，TrackEval 以 MOT20 的慣例計分：標為 `non_mot_vehicle` 的標註與其他干擾物一樣被忽略，在其上的預測不算誤報。本機的 MOT20 標註在 `MOT20-02`、`03`、`05` 都含這個類別。選錯 benchmark 不會報錯，但分數會因此偏低，這個差異由 `tests/test_scoring_benchmark.py` 固定。
+
+**追蹤器參數沿用 MOT17。** `--params` 直接使用既有的 `params.json`，略過調參，也不讀取、不偵測 Tuning Half 的影格，所以 MOT20 的 Tuning Half 完全沒有被使用。上面的指令使用 MOT17 FP16 基準執行 `full-fp16-3` 的參數（偵測門檻 0.6、比對門檻 0.9、track buffer 30；`full-fp16-1`、`-2`、`-3` 的參數相同）。`summary.json` 的 `tuning` 區塊因此記為 `{"skipped": true, "params_file": "<路徑>"}`，記錄的是你給的路徑而不是檔名，因為每次執行寫出的檔案都叫 `params.json`；摘要也記錄 `benchmark`。
+
+**結果**（PyTorch FP16，Validation Half，RTX 5090，`mot20-fp16-3`）：
+
+| 序列 | HOTA | MOTA | IDF1 |
+| --- | ---: | ---: | ---: |
+| MOT20-01 | 43.65 | 43.69 | 55.18 |
+| MOT20-02 | 34.83 | 37.68 | 45.96 |
+| MOT20-03 | 38.37 | 44.08 | 57.68 |
+| MOT20-05 | 29.64 | 32.39 | 38.94 |
+| 合併 | 33.90 | 37.06 | 46.58 |
+
+同一個設定的兩次執行（`mot20-fp16-3`、`mot20-fp16-4`）分數與四個結果檔逐位元組相同。實際推論只在最早、已被取代的 `mot20-fp16-1` 跑過（約 156 秒）；`-3` 與 `-4` 的偵測都來自它留下的快取（各約 24、22 秒），所以兩次驗證的是追蹤與計分的決定性，不是重新推論的重現性，兩次都沒有重新推論。
+
+**限制。**
+
+- 分數遠低於 MOT17 的合併 HOTA 50.78。可能的原因包括人群擁擠、追蹤器參數是 MOT17 調的、COCO 預訓練權重沒有針對 MOT 微調；這些原因都沒有逐一驗證，也沒有做任何隔離它們的實驗。
+- 沒有在 MOT20 上調參的對照，所以不知道調參能改善多少。
+- 只有 PyTorch FP16；MOT20 的 ONNX、TensorRT、INT8 準確度與延遲、吞吐量都沒有量測。
+- 不可與 ByteTrack 論文的數字並列比較，也不可與 MOT17 的數字視為同一個條件。
+- 結果檔在被忽略的 `data/results/`，不進版控；文件測試對照結果檔，結果檔不在時 skip。早先的 `mot20-fp16-1`、`-2` 的摘要只記檔名，已被 `-3`、`-4` 取代。
 
 ## 缺少資料時
 

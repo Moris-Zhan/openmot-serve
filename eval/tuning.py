@@ -53,7 +53,9 @@ class TuningResult:
     trials: tuple[Trial, ...]
 
 
-def _score_trial(sequences: Sequence[TuningSequence], params: TrackerParams, trial_dir: Path) -> float:
+def _score_trial(
+    sequences: Sequence[TuningSequence], params: TrackerParams, trial_dir: Path, benchmark: str
+) -> float:
     results_dir = trial_dir / "results"
     results_dir.mkdir(parents=True)
     result_files = {}
@@ -66,12 +68,16 @@ def _score_trial(sequences: Sequence[TuningSequence], params: TrackerParams, tri
         {sequence.name: sequence.sequence_dir for sequence in sequences},
         result_files,
         trial_dir / "score",
+        benchmark,
     )
     return report.combined.hota
 
 
 def tune_parameters(
-    sequences: Sequence[TuningSequence], workspace: Path, grid: Sequence[TrackerParams] = GRID
+    sequences: Sequence[TuningSequence],
+    workspace: Path,
+    grid: Sequence[TrackerParams] = GRID,
+    benchmark: str = "MOT17",
 ) -> TuningResult:
     if not sequences:
         raise TuningError("no sequence given to tune on")
@@ -80,7 +86,7 @@ def tune_parameters(
     if workspace.exists() and any(workspace.iterdir()):
         raise TuningError(f"tuning workspace is not empty: {workspace}")
     trials = tuple(
-        Trial(params, _score_trial(sequences, params, workspace / f"trial-{index:02d}"))
+        Trial(params, _score_trial(sequences, params, workspace / f"trial-{index:02d}", benchmark))
         for index, params in enumerate(grid)
     )
     best = trials[0]
