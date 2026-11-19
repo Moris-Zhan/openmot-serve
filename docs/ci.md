@@ -68,6 +68,7 @@ worker 映像約 11 GB。為了在託管 runner 上有足夠的磁碟，`publish
 |---|---|
 | `lint` 失敗並列出規則代號 | 在本機執行 `ruff check .`；`F401`、`I001` 等可用 `ruff check --fix .` 修正，修完要看差異 |
 | `test` 的 `sha256sum` 失敗 | 下載的工具與官方校驗碼不符；確認版本與校驗碼後再更新 |
+| `test` 的安裝步驟下載工具時出現 403 或 5xx | 下載主機暫時拒絕或故障。每個下載已內建重試 5 次（含 403），日誌會印出最後的狀態碼與網址；仍失敗就重新執行該次 run。連續失敗再檢查網址與版本是否還存在 |
 | `test` 裡有一項比對工具版本的測試失敗 | runner 預裝的版本與文件不同。第一次真實執行時，runner 預裝 kubectl v1.37.2，而文件記錄 v1.31.4，所以 CI 改為安裝固定版本；升級工具時，要同時改工作流程、校驗碼與 `docs/kubernetes.md` |
 | `test` 第一次執行較慢 | kubeconform 要下載 Kubernetes schema，下載失敗時測試會註明原因 |
 | `build-api` 的冒煙檢查失敗 | 映像缺相依套件；先檢查 `deploy/docker/api-requirements.txt` |
