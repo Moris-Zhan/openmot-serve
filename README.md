@@ -71,7 +71,7 @@ flowchart LR
 | Detector | YOLOX, pretrained COCO weights | Apache-2.0, see ADR-0001 |
 | Inference backend | PyTorch (default), ONNX Runtime, TensorRT | `OPENMOT_BACKEND` and `OPENMOT_PRECISION`; the TensorRT worker image is Compose only, Kubernetes uses PyTorch |
 | Tracker | ByteTrack | MIT |
-| Storage | Kubernetes PersistentVolumeClaim (k3s `local-path`, single node) | S3-compatible storage later |
+| Storage | Kubernetes PersistentVolumeClaim (k3s `local-path`, single node) | Optional S3-compatible backend for Compose (`OPENMOT_STORAGE_BACKEND=s3`, see [`docs/service.md`](docs/service.md)); Kubernetes stays on the PVC |
 | Orchestration | k3s single node + NVIDIA device plugin | GPU Operator is not managed here; target GPU: RTX 5090 (CUDA 12.8+) |
 | Monitoring | Prometheus + Grafana | Latency, throughput, job failures; compose overlay; Kubernetes manifests written, not verified on a cluster |
 | CI | GitHub Actions | Lint, test, build image |
@@ -209,7 +209,7 @@ The Grafana dashboard is provisioned by the Compose monitoring overlay (see [`do
 
 ### Later
 - [x] MOT20 benchmark (PyTorch FP16 on the validation half, tracker parameters reused from MOT17; see [`docs/evaluation.md`](docs/evaluation.md))
-- [ ] S3-compatible storage
+- [x] S3-compatible storage (optional backend, Compose only; verified end to end against a pinned RustFS image (`rustfs/rustfs:1.0.6`), not MinIO or AWS S3; see [`docs/service.md`](docs/service.md))
 - [ ] Natural-language queries over tracking results (RAG agent)
 
 ## Data

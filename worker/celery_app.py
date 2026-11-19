@@ -4,6 +4,7 @@ from pathlib import Path
 
 from celery import Celery
 
+from jobs.object_store import frames_prefix
 from jobs.settings import Settings
 from metrics.definitions import Metrics
 from worker.processing import ProcessOutcome, WorkerContext, process_job
@@ -41,6 +42,15 @@ def _frame_count(frames_dir: Path) -> int:
     return sum(1 for entry in frames_dir.iterdir() if entry.is_file())
 
 
+def _frames_in(context: WorkerContext, job_id: str) -> int:
+    if context.objects is None:
+        return _frame_count(context.layout.frames_dir(job_id))
+    try:
+        return len(context.objects.list_keys(frames_prefix(job_id)))
+    except Exception:
+        return 0
+
+
 def _record_outcome(metrics: Metrics, outcome: ProcessOutcome, elapsed_seconds: float, frames: int) -> None:
     metrics.jobs.labels(outcome=outcome.value).inc()
     if outcome is not ProcessOutcome.SKIPPED:
@@ -59,7 +69,7 @@ def register_task(
     def process(job_id: str) -> str:
         if metrics is None:
             return process_job(context, job_id).value
-        frames = _frame_count(context.layout.frames_dir(job_id))
+        frames = _frames_in(context, job_id)
         started = monotonic()
         outcome = process_job(context, job_id)
         _record_outcome(metrics, outcome, monotonic() - started, frames)

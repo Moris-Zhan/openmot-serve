@@ -21,14 +21,18 @@ class StorageError(RuntimeError):
     pass
 
 
+def checked_job_id(job_id: str) -> str:
+    if not _JOB_ID.fullmatch(job_id):
+        raise InvalidJobId(f"invalid job id {job_id!r}: use 1-64 letters, digits, '-' or '_'")
+    return job_id
+
+
 @dataclass(frozen=True)
 class StorageLayout:
     root: Path
 
     def job_dir(self, job_id: str) -> Path:
-        if not _JOB_ID.fullmatch(job_id):
-            raise InvalidJobId(f"invalid job id {job_id!r}: use 1-64 letters, digits, '-' or '_'")
-        return self.root / "jobs" / job_id
+        return self.root / "jobs" / checked_job_id(job_id)
 
     def frames_dir(self, job_id: str) -> Path:
         return self.job_dir(job_id) / "frames"

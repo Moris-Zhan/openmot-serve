@@ -353,6 +353,48 @@ docker compose $STACK up -d --build
 
 重建 api 或 worker（例如 `up -d --force-recreate`）不會遺失已完成 Job 的狀態與結果。序列與結果不會自動清理，需要時請自行刪除 `jobs/<id>/` 與對應的 Redis 鍵，磁碟用量要自行監控。
 
+### S3 物件儲存
+
+預設仍是檔案系統（`storage` 卷），不設定任何東西時行為不變。要改用 S3 相容的物件儲存，設定 `OPENMOT_STORAGE_BACKEND=s3`：api 把影格上傳到 bucket，worker 下載到本機暫存、追蹤後把 `result.meta.json` 與 `result.txt` 上傳回 bucket（先上傳完才標為 `succeeded`），api 再從 bucket 讀取結果。物件鍵與檔案系統的版面相同：`jobs/<id>/frames/<名稱>`、`jobs/<id>/result.txt`、`jobs/<id>/result.meta.json`。
+
+| 變數 | 預設值 | 使用者 | 說明 |
+| --- | --- | --- | --- |
+| `OPENMOT_STORAGE_BACKEND` | `filesystem` | api、worker | `filesystem` 或 `s3` |
+| `OPENMOT_S3_BUCKET` | 無，`s3` 時必填 | api、worker | bucket 名稱，不由服務建立 |
+| `OPENMOT_S3_ENDPOINT_URL` | 未設定 | api、worker | 相容服務的 `http://` 或 `https://` 位址；設定時使用 path-style 定址 |
+| `OPENMOT_S3_REGION` | `us-east-1` | api、worker | 簽章用的區域 |
+| `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY` | 無 | api、worker | 由 boto3 從環境讀取；不寫進設定物件、日誌或錯誤訊息 |
+
+`OPENMOT_STORAGE_DIR` 在 `s3` 模式仍必填，但只放本機暫存：api 用 `staging/`，worker 用 `scratch/`，事後應為空。
+
+#### 用 Compose 啟動
+
+```bash
+export S3_ACCESS_KEY=<自訂> S3_SECRET_KEY=<自訂，至少 8 個字元>
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.weights-volume.yml \
+  -f deploy/docker/docker-compose.s3.yml up -d s3
+```
+
+缺少兩個變數任一個時，`docker compose config` 會失敗並指出缺哪一個；提交的檔案內沒有預設金鑰。override 加入 `s3` 服務（映像 `rustfs/rustfs:1.0.6`）（只綁在 `127.0.0.1:9000`，埠可用 `OPENMOT_S3_PORT` 改），並讓 api 與 worker 各用**不同**的暫存卷（`api-scratch`、`worker-scratch`），所以兩者之間沒有共用磁碟。bucket 要先建立（預設名稱 `openmot`，可用 `OPENMOT_S3_BUCKET` 改），再啟動其餘服務：
+
+```python
+import boto3
+boto3.client("s3", endpoint_url="http://127.0.0.1:9000", region_name="us-east-1").create_bucket(Bucket="openmot")
+```
+
+（上面的 Python 需要 `AWS_ACCESS_KEY_ID` 與 `AWS_SECRET_ACCESS_KEY` 設成與 `S3_ACCESS_KEY`、`S3_SECRET_KEY` 相同的值。）bucket 不存在時 `/health` 回 `503` 並指出物件儲存不可用。再執行 `up -d redis api worker`。
+
+#### 已驗證與限制
+
+- 已驗證：在這台機器（RTX 5090、Docker Compose）以 `pytest -m "integration or gpu" tests/test_s3_storage_e2e.py -s` 對 MOT17-09-FRCNN 的 60 張影格跑一個真實 Job，六項檢查全數通過：Job `succeeded`；bucket 內的 Result 與中繼檔和以命令列處理同一序列的輸出逐位元組相同；`frames/` 恰有 60 個物件；api 與 worker 的 `/data/storage` 是不同的卷；兩邊本機暫存為空；bucket 被刪除後 `/health` 為 `503` 且不含金鑰。本機 RustFS 的延遲：提交（上傳 60 張）1.0 秒，提交到 `succeeded` 共 3.0 秒。
+- 只驗證 RustFS 的釘定版本 `1.0.6`（映像摘要 `sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a`，Apache 2.0）。**沒有**在 MinIO、AWS S3 或其他相容服務上驗證；RustFS 與 MinIO 不是同一個程式，行為可能不同。官方 `minio/minio` 映像拉不到，所以沒有用它。
+- Kubernetes 不支援：k8s 清單沒有改，仍用 PersistentVolumeClaim。
+- 沒有物件保存期限：影格、Result 與中繼檔會一直留在 bucket，需自行設定生命週期或刪除。
+- 逐張傳輸：影格逐張上傳、下載，沒有平行傳輸；一個 600 張的序列就是 600 次請求，延遲數字只量過 60 張的本機情況。
+- 孤兒物件與殘留暫存：清理是盡力而為，失敗只記日誌；api 在提交中途失敗或進程被終止時，bucket 內可能留下沒有 Job 的物件；worker 被強制終止時，`scratch/` 可能殘留，同一個 Job 重跑時會在下載前清除。
+- 映像大小：`boto3` 讓 api 映像增加約 20.5 MB、worker 映像約 20.6 MB（`docker image inspect` 的 Size）；`docker images` 列出的 api 映像是 763 MB → 849 MB，兩種量法的差異原因沒有查明。
+- 以靜態金鑰認證，沒有驗證 IAM 角色或暫時憑證；本機用的是 RustFS 的 root 金鑰，正式環境應建立專屬的存取金鑰。
+
 ### 疑難排解
 
 | 症狀 | 原因與處理 |

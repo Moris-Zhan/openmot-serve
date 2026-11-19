@@ -25,6 +25,7 @@ service = [
   "python-multipart>=0.0.9",
   "celery>=5.4",
   "redis>=5",
+  "boto3>=1.34",
   "prometheus_client==0.21.1",
 ]
 export = [
