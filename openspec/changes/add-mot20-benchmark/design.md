@@ -39,7 +39,7 @@
 
 ### D3：`--params` 略過調參，且不碰 Tuning Half
 
-指定 `--params <檔案>` 時，用既有的 `read_params` 載入（無效就在任何偵測開始之前失敗，不寫執行資料夾），`execute()` 略過 `_tune()`：不實體化 Tuning Half、不對 Tuning Half 偵測、不跑 `tune_parameters`。仍然寫 `params.json`（內容是使用的參數）。摘要的 `tuning` 區塊改記 `{"skipped": true, "params_file": "<檔名>"}`，沒有 `combined_hota` 與 `combinations`；未指定時 `tuning` 區塊與現在相同。
+指定 `--params <檔案>` 時，用既有的 `read_params` 載入（無效就在任何偵測開始之前失敗，不寫執行資料夾），`execute()` 略過 `_tune()`：不實體化 Tuning Half、不對 Tuning Half 偵測、不跑 `tune_parameters`。仍然寫 `params.json`（內容是使用的參數）。摘要的 `tuning` 區塊改記 `{"skipped": true, "params_file": "<使用者給的路徑>"}`，沒有 `combined_hota` 與 `combinations`。記錄的是路徑而不是檔名，因為每次執行寫出的參數檔都叫 `params.json`，只有檔名看不出它來自哪一次執行；未指定時 `tuning` 區塊與現在相同。
 
 驗證要在建立執行資料夾之前做，與現有「不支援的組合在偵測之前失敗」的做法一致。
 
