@@ -98,6 +98,24 @@ flowchart LR
 
 `lint`, `test` and `build-api` run in parallel on every push and pull request. `publish` waits for all three (`needs`), so one failing job skips it, and it runs only for a push to `main`, the only place that holds `packages: write`. The tool downloads in `test` are verified against fixed sha256 values and retried up to five times, which also covers a transient HTTP 403 or 5xx from the download host. The worker image is built and pushed by `publish` but not smoke-tested in CI, and the TensorRT worker image is never built there.
 
+## Quick start
+
+Needs an NVIDIA GPU with the NVIDIA Container Toolkit, Docker Compose v2 and the weights at `models/yolox_x.pth`.
+
+```bash
+docker compose -f deploy/docker/docker-compose.yml up -d --build
+docker compose -f deploy/docker/docker-compose.yml ps    # wait until all three services are healthy
+python -c "import httpx; print(httpx.get('http://127.0.0.1:8000/health').json())"    # {'status': 'ok'}
+```
+
+The api is published on the host's `127.0.0.1` only, so other machines cannot reach it directly (it has no authentication or TLS). From another computer, open an SSH tunnel and use `http://127.0.0.1:8000` there:
+
+```bash
+ssh -N -L 8000:127.0.0.1:8000 <user>@<this-machine>
+```
+
+Submitting a job, the weights location, the environment variables and troubleshooting are in [`docs/service.md`](docs/service.md).
+
 ## API
 
 | Method | Path | Description |
