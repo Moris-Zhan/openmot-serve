@@ -58,6 +58,12 @@ def test_the_failure_cases_include_the_empty_structured_answer_of_thinking_model
     assert "gpt-oss" in section and "not valid JSON" in section
 
 
+def test_the_restart_rules_are_written_down() -> None:
+    section = _section("## 重啟評估的規則")
+    for phrase in ("暫停", "雲端", "新種子", "兩輪", "不覆蓋", "小實驗", "不計入評分", "協定", "門檻維持"):
+        assert phrase in section, phrase
+
+
 def test_the_raw_results_are_committed_for_every_candidate() -> None:
     assert "docs/llm-selection-results" in REPORT
     for model in CANDIDATES:
