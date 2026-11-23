@@ -1,0 +1,415 @@
+[
+  {
+    "answerable": true,
+    "arguments": {},
+    "category": null,
+    "frames_alternative": null,
+    "gold": 49,
+    "id": "q01",
+    "source": "real",
+    "text": "這段追蹤結果共有幾個不同的身分？",
+    "tool": "count_unique_ids"
+  },
+  {
+    "answerable": true,
+    "arguments": {
+      "min_frames": 5
+    },
+    "category": null,
+    "frames_alternative": null,
+    "gold": 48,
+    "id": "q02",
+    "source": "real",
+    "text": "只算至少出現在 5 張影格的身分，這段追蹤結果共有幾個不同的身分？",
+    "tool": "count_unique_ids"
+  },
+  {
+    "answerable": true,
+    "arguments": {
+      "min_frames": 20
+    },
+    "category": null,
+    "frames_alternative": null,
+    "gold": 35,
+    "id": "q03",
+    "source": "real",
+    "text": "只算至少出現在 20 張影格的身分，這段追蹤結果共有幾個不同的身分？",
+    "tool": "count_unique_ids"
+  },
+  {
+    "answerable": true,
+    "arguments": {
+      "track_id": 38
+    },
+    "category": null,
+    "frames_alternative": null,
+    "gold": [
+      150,
+      159
+    ],
+    "id": "q04",
+    "source": "real",
+    "text": "編號 38 的人第一次與最後一次出現在第幾張影格？",
+    "tool": "track_span"
+  },
+  {
+    "answerable": true,
+    "arguments": {
+      "track_id": 60
+    },
+    "category": null,
+    "frames_alternative": null,
+    "gold": [
+      231,
+      263
+    ],
+    "id": "q05",
+    "source": "real",
+    "text": "編號 60 的人第一次與最後一次出現在第幾張影格？",
+    "tool": "track_span"
+  },
+  {
+    "answerable": true,
+    "arguments": {
+      "track_id": 41
+    },
+    "category": null,
+    "frames_alternative": null,
+    "gold": [
+      166,
+      198
+    ],
+    "id": "q06",
+    "source": "real",
+    "text": "編號 41 的人第一次與最後一次出現在第幾張影格？",
+    "tool": "track_span"
+  },
+  {
+    "answerable": true,
+    "arguments": {
+      "frame": 111
+    },
+    "category": null,
+    "frames_alternative": null,
+    "gold": 11,
+    "id": "q07",
+    "source": "real",
+    "text": "第 111 張影格裡有幾個人？",
+    "tool": "people_in_frame"
+  },
+  {
+    "answerable": true,
+    "arguments": {
+      "frame": 11
+    },
+    "category": null,
+    "frames_alternative": null,
+    "gold": 14,
+    "id": "q08",
+    "source": "real",
+    "text": "第 11 張影格裡有幾個人？",
+    "tool": "people_in_frame"
+  },
+  {
+    "answerable": true,
+    "arguments": {
+      "frame": 131
+    },
+    "category": null,
+    "frames_alternative": null,
+    "gold": 13,
+    "id": "q09",
+    "source": "real",
+    "text": "第 131 張影格裡有幾個人？",
+    "tool": "people_in_frame"
+  },
+  {
+    "answerable": true,
+    "arguments": {
+      "track_id": 45
+    },
+    "category": null,
+    "frames_alternative": null,
+    "gold": 75,
+    "id": "q10",
+    "source": "real",
+    "text": "編號 45 總共出現在幾張影格？",
+    "tool": "dwell_frames"
+  },
+  {
+    "answerable": true,
+    "arguments": {
+      "track_id": 59
+    },
+    "category": null,
+    "frames_alternative": null,
+    "gold": 33,
+    "id": "q11",
+    "source": "real",
+    "text": "編號 59 總共出現在幾張影格？",
+    "tool": "dwell_frames"
+  },
+  {
+    "answerable": true,
+    "arguments": {
+      "track_id": 36
+    },
+    "category": null,
+    "frames_alternative": null,
+    "gold": 95,
+    "id": "q12",
+    "source": "real",
+    "text": "編號 36 總共出現在幾張影格？",
+    "tool": "dwell_frames"
+  },
+  {
+    "answerable": true,
+    "arguments": {
+      "x_max": 1547,
+      "x_min": 1247,
+      "y_max": 829,
+      "y_min": 529
+    },
+    "category": null,
+    "frames_alternative": null,
+    "gold": [
+      1,
+      3,
+      4,
+      5,
+      7,
+      9,
+      14,
+      17,
+      22,
+      27,
+      29,
+      36,
+      40,
+      54,
+      58
+    ],
+    "id": "q13",
+    "source": "real",
+    "text": "請問框底邊中心點落在 x 介於 1247 到 1547、y 介於 529 到 829（像素）的矩形內的身分編號有哪些？",
+    "tool": "ids_in_region"
+  },
+  {
+    "answerable": true,
+    "arguments": {
+      "frame_end": 141,
+      "frame_start": 29,
+      "x_max": 2041,
+      "x_min": 1641,
+      "y_max": 940,
+      "y_min": 540
+    },
+    "category": null,
+    "frames_alternative": null,
+    "gold": [
+      2,
+      3,
+      5,
+      6,
+      8,
+      15,
+      31,
+      32,
+      34
+    ],
+    "id": "q14",
+    "source": "real",
+    "text": "請問在第 29 到第 141 張影格之間，框底邊中心點落在 x 介於 1641 到 2041、y 介於 540 到 940（像素）的矩形內的身分編號有哪些？",
+    "tool": "ids_in_region"
+  },
+  {
+    "answerable": true,
+    "arguments": {
+      "x_max": 100100,
+      "x_min": 100000,
+      "y_max": 100100,
+      "y_min": 100000
+    },
+    "category": null,
+    "frames_alternative": null,
+    "gold": [],
+    "id": "q15",
+    "source": "real",
+    "text": "請問框底邊中心點落在 x 介於 100000 到 100100、y 介於 100000 到 100100（像素）的矩形內的身分編號有哪些？",
+    "tool": "ids_in_region"
+  },
+  {
+    "answerable": true,
+    "arguments": {},
+    "category": null,
+    "frames_alternative": null,
+    "gold": 0,
+    "id": "q16",
+    "source": "empty",
+    "text": "這段追蹤結果共有幾個不同的身分？",
+    "tool": "count_unique_ids"
+  },
+  {
+    "answerable": true,
+    "arguments": {},
+    "category": null,
+    "frames_alternative": null,
+    "gold": 1,
+    "id": "q17",
+    "source": "single",
+    "text": "這段追蹤結果共有幾個不同的身分？",
+    "tool": "count_unique_ids"
+  },
+  {
+    "answerable": true,
+    "arguments": {
+      "track_id": 2
+    },
+    "category": null,
+    "frames_alternative": null,
+    "gold": [
+      3,
+      12
+    ],
+    "id": "q18",
+    "source": "gaps",
+    "text": "編號 2 的人第一次與最後一次出現在第幾張影格？",
+    "tool": "track_span"
+  },
+  {
+    "answerable": true,
+    "arguments": {
+      "track_id": 2
+    },
+    "category": null,
+    "frames_alternative": null,
+    "gold": 6,
+    "id": "q19",
+    "source": "gaps",
+    "text": "編號 2 總共出現在幾張影格？",
+    "tool": "dwell_frames"
+  },
+  {
+    "answerable": true,
+    "arguments": {
+      "frame": 7
+    },
+    "category": null,
+    "frames_alternative": null,
+    "gold": 40,
+    "id": "q20",
+    "source": "crowd",
+    "text": "第 7 張影格裡有幾個人？",
+    "tool": "people_in_frame"
+  },
+  {
+    "answerable": true,
+    "arguments": {},
+    "category": null,
+    "frames_alternative": null,
+    "gold": 40,
+    "id": "q21",
+    "source": "crowd",
+    "text": "這段追蹤結果共有幾個不同的身分？",
+    "tool": "count_unique_ids"
+  },
+  {
+    "answerable": false,
+    "arguments": null,
+    "category": "image_content",
+    "frames_alternative": null,
+    "gold": null,
+    "id": "q22",
+    "source": "real",
+    "text": "畫面中穿紅色衣服的人有幾個？",
+    "tool": null
+  },
+  {
+    "answerable": false,
+    "arguments": null,
+    "category": "image_content",
+    "frames_alternative": null,
+    "gold": null,
+    "id": "q23",
+    "source": "real",
+    "text": "編號 48 的人是在跑步還是在走路？",
+    "tool": null
+  },
+  {
+    "answerable": false,
+    "arguments": null,
+    "category": "missing_sequence_info",
+    "frames_alternative": null,
+    "gold": null,
+    "id": "q24",
+    "source": "real",
+    "text": "畫面左半邊有幾個人？",
+    "tool": null
+  },
+  {
+    "answerable": false,
+    "arguments": null,
+    "category": "missing_sequence_info",
+    "frames_alternative": 12,
+    "gold": null,
+    "id": "q25",
+    "source": "real",
+    "text": "編號 48 在畫面中停留了幾秒？",
+    "tool": null
+  },
+  {
+    "answerable": false,
+    "arguments": null,
+    "category": "missing_sequence_info",
+    "frames_alternative": null,
+    "gold": null,
+    "id": "q26",
+    "source": "real",
+    "text": "這段影像的解析度是多少？",
+    "tool": null
+  },
+  {
+    "answerable": false,
+    "arguments": null,
+    "category": "cross_sequence",
+    "frames_alternative": null,
+    "gold": null,
+    "id": "q27",
+    "source": "real",
+    "text": "這段結果和 MOT17-04 比，哪一段的人比較多？",
+    "tool": null
+  },
+  {
+    "answerable": false,
+    "arguments": null,
+    "category": "prediction",
+    "frames_alternative": null,
+    "gold": null,
+    "id": "q28",
+    "source": "real",
+    "text": "第 273 張影格預計會有幾個人？",
+    "tool": null
+  },
+  {
+    "answerable": false,
+    "arguments": null,
+    "category": "prediction",
+    "frames_alternative": null,
+    "gold": null,
+    "id": "q29",
+    "source": "real",
+    "text": "編號 48 的人接下來會往哪個方向走？",
+    "tool": null
+  },
+  {
+    "answerable": false,
+    "arguments": null,
+    "category": "real_identity",
+    "frames_alternative": null,
+    "gold": null,
+    "id": "q30",
+    "source": "real",
+    "text": "編號 48 的人是誰？叫什麼名字？",
+    "tool": null
+  }
+]
