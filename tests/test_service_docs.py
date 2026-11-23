@@ -46,3 +46,8 @@ def test_the_known_limits_are_stated() -> None:
 def test_the_measured_results_are_recorded_with_their_scope() -> None:
     assert "逐位元組相同" in DOC and "3 次量測" in DOC
     assert "tests/test_tensorrt_worker_e2e.py" in DOC
+
+
+def test_the_api_loopback_binding_and_the_ssh_tunnel_are_documented() -> None:
+    assert "只發佈在主機的 `127.0.0.1`" in DOC
+    assert "ssh -N -L 8000:127.0.0.1:8000" in DOC

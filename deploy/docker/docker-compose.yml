@@ -25,7 +25,7 @@ services:
     environment:
       <<: *service-env
     ports:
-      - "${OPENMOT_API_PORT:-8000}:8000"
+      - "127.0.0.1:${OPENMOT_API_PORT:-8000}:8000"
     volumes:
       - storage:/data/storage
     depends_on:
