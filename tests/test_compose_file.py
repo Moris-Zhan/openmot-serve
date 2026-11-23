@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -10,12 +11,13 @@ COMPOSE_FILE = Path(__file__).resolve().parents[1] / "deploy" / "docker" / "dock
 pytestmark = pytest.mark.skipif(shutil.which("docker") is None, reason="the docker CLI is not installed")
 
 
-def _config() -> dict[str, dict]:
+def _config(extra_env: dict[str, str] | None = None) -> dict[str, dict]:
     result = subprocess.run(
         ["docker", "compose", "-f", str(COMPOSE_FILE), "config", "--format", "json"],
         capture_output=True,
         text=True,
         check=True,
+        env={**os.environ, **(extra_env or {})},
     )
     return json.loads(result.stdout)
 
@@ -80,6 +82,45 @@ def test_only_the_api_publishes_a_port() -> None:
     services = _config()["services"]
     assert "ports" not in services["redis"] and "ports" not in services["worker"]
     assert services["api"]["ports"][0]["target"] == 8000
+
+
+def test_the_api_port_is_published_on_the_host_loopback_only() -> None:
+    ports = _config()["services"]["api"]["ports"]
+    assert ports and all(port["host_ip"] == "127.0.0.1" and port["target"] == 8000 for port in ports)
+
+
+def test_changing_the_host_port_keeps_the_loopback_address() -> None:
+    ports = _config({"OPENMOT_API_PORT": "18000"})["services"]["api"]["ports"]
+    assert [(port["host_ip"], port["published"]) for port in ports] == [("127.0.0.1", "18000")]
+
+
+@pytest.mark.parametrize("overlay", ["tensorrt", "s3", "monitoring", "weights-volume"])
+def test_every_stacked_override_keeps_the_api_on_loopback(overlay: str) -> None:
+    result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            str(COMPOSE_FILE),
+            "-f",
+            str(COMPOSE_FILE.parent / f"docker-compose.{overlay}.yml"),
+            "config",
+            "--format",
+            "json",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={
+            **os.environ,
+            "OPENMOT_ENGINE_FILE": "x.engine",
+            "S3_ACCESS_KEY": "a",
+            "S3_SECRET_KEY": "b",
+            "GRAFANA_ADMIN_PASSWORD": "c",
+        },
+    )
+    ports = json.loads(result.stdout)["services"]["api"]["ports"]
+    assert ports and all(port["host_ip"] == "127.0.0.1" for port in ports)
 
 
 def test_services_reach_redis_by_its_service_name() -> None:

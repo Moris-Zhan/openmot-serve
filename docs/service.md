@@ -279,7 +279,15 @@ compose 已替 api 與 worker 設好儲存目錄、Redis 位址與權重路徑�
 | `OPENMOT_LOCK_TIMEOUT_SECONDS` | 1800 | worker | Job 鎖逾時，同時是訊息重新投遞的等待時間 |
 | `OPENMOT_TASK_TIME_LIMIT_SECONDS` | 1500 | worker | 單一 Job 的時間上限，必須小於鎖逾時 |
 
-Compose 層級的變數：`OPENMOT_API_PORT`（對外埠，預設 8000）、`OPENMOT_WEIGHTS_FILE`（主機上的權重路徑）。
+Compose 層級的變數：`OPENMOT_API_PORT`（主機埠，預設 8000）、`OPENMOT_WEIGHTS_FILE`（主機上的權重路徑）。
+
+api 只發佈在主機的 `127.0.0.1`，區域網路內的其他機器無法直接連線（api 沒有驗證與 TLS）。要從別的電腦使用，請在那台電腦上開 SSH 通道：
+
+```bash
+ssh -N -L 8000:127.0.0.1:8000 <使用者>@<這台機器>
+```
+
+通道建立後，在那台電腦開 `http://127.0.0.1:8000`。如果改了 `OPENMOT_API_PORT`，通道裡的第二個埠要跟著改。
 
 ### TensorRT worker
 
