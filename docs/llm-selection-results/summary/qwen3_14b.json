@@ -1,0 +1,48 @@
+{
+  "model": "qwen3:14b",
+  "runs": 3,
+  "metrics": {
+    "tool_format_correctness": 1.0,
+    "answer_correctness": 0.8412698412698413,
+    "refusal_correctness": 0.8518518518518519,
+    "latency_median_seconds": 6.115682023577392,
+    "trials": 90,
+    "unstable_questions": 6,
+    "inconsistent_trials": 2
+  },
+  "model_info": {
+    "digest": null,
+    "details": {
+      "parent_model": "",
+      "format": "gguf",
+      "family": "qwen3",
+      "families": [
+        "qwen3"
+      ],
+      "parameter_size": "14.8B",
+      "quantization_level": "Q4_K_M"
+    }
+  },
+  "vram": {
+    "size_vram_gib": 13.565917967818677,
+    "gpu_delta_mib": 14527,
+    "vram_gib": 14.1865234375
+  },
+  "thresholds": {
+    "answer_correctness": 0.9,
+    "refusal_correctness": 0.9,
+    "tool_format_correctness": 0.95,
+    "vram_gib": 16.0
+  },
+  "passed": false,
+  "failed_thresholds": [
+    "answer_correctness",
+    "refusal_correctness"
+  ],
+  "idle_check": {
+    "tolerance_mib": 2048,
+    "waits": 52,
+    "waited_seconds": 1560.0,
+    "discarded_blocks": 3
+  }
+}

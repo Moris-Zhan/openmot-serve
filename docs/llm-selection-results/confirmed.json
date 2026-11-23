@@ -1,0 +1,1 @@
+{"models": ["qwen3:14b", "mimo-v2.6:9b-q4_K_M", "gpt-oss:latest", "granite4:3b"], "confirmed_by_user": "2026-11-19", "ollama_image": "ollama/ollama:0.40.16"}

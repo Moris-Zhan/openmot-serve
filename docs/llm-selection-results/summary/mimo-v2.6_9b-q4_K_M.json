@@ -1,0 +1,49 @@
+{
+  "model": "mimo-v2.6:9b-q4_K_M",
+  "runs": 3,
+  "metrics": {
+    "tool_format_correctness": 0.9736842105263158,
+    "answer_correctness": 0.8095238095238095,
+    "refusal_correctness": 0.6666666666666666,
+    "latency_median_seconds": 1.5052139041945338,
+    "trials": 90,
+    "unstable_questions": 0,
+    "inconsistent_trials": 3
+  },
+  "model_info": {
+    "digest": null,
+    "details": {
+      "parent_model": "model-q4_K_M.gguf",
+      "format": "gguf",
+      "family": "qwen35",
+      "families": [
+        "qwen35"
+      ],
+      "parameter_size": "9.0B",
+      "quantization_level": "Q4_K_M",
+      "runner": "llamacpp"
+    }
+  },
+  "vram": {
+    "size_vram_gib": 6.2564843744039536,
+    "gpu_delta_mib": 7883,
+    "vram_gib": 7.6982421875
+  },
+  "thresholds": {
+    "answer_correctness": 0.9,
+    "refusal_correctness": 0.9,
+    "tool_format_correctness": 0.95,
+    "vram_gib": 16.0
+  },
+  "passed": false,
+  "failed_thresholds": [
+    "answer_correctness",
+    "refusal_correctness"
+  ],
+  "idle_check": {
+    "tolerance_mib": 2048,
+    "waits": 0,
+    "waited_seconds": 0.0,
+    "discarded_blocks": 0
+  }
+}

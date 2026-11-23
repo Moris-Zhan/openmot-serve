@@ -1,0 +1,49 @@
+{
+  "model": "gpt-oss:latest",
+  "runs": 3,
+  "metrics": {
+    "tool_format_correctness": 1.0,
+    "answer_correctness": 0.7142857142857143,
+    "refusal_correctness": 0.6666666666666666,
+    "latency_median_seconds": 1.4010900813154876,
+    "trials": 90,
+    "unstable_questions": 0,
+    "inconsistent_trials": 0
+  },
+  "model_info": {
+    "digest": null,
+    "details": {
+      "parent_model": "dhiltgen/gpt-oss:20b-llamacpp",
+      "format": "gguf",
+      "family": "gpt-oss",
+      "families": [
+        "gpt-oss"
+      ],
+      "parameter_size": "20.9B",
+      "quantization_level": "MXFP4",
+      "runner": "llamacpp"
+    }
+  },
+  "vram": {
+    "size_vram_gib": 12.024628905579448,
+    "gpu_delta_mib": 13707,
+    "vram_gib": 13.3857421875
+  },
+  "thresholds": {
+    "answer_correctness": 0.9,
+    "refusal_correctness": 0.9,
+    "tool_format_correctness": 0.95,
+    "vram_gib": 16.0
+  },
+  "passed": false,
+  "failed_thresholds": [
+    "answer_correctness",
+    "refusal_correctness"
+  ],
+  "idle_check": {
+    "tolerance_mib": 2048,
+    "waits": 0,
+    "waited_seconds": 0.0,
+    "discarded_blocks": 0
+  }
+}

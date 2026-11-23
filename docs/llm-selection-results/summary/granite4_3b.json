@@ -1,0 +1,48 @@
+{
+  "model": "granite4:3b",
+  "runs": 3,
+  "metrics": {
+    "tool_format_correctness": 1.0,
+    "answer_correctness": 0.6825396825396826,
+    "refusal_correctness": 0.07407407407407407,
+    "latency_median_seconds": 0.4899308723397553,
+    "trials": 90,
+    "unstable_questions": 2,
+    "inconsistent_trials": 20
+  },
+  "model_info": {
+    "digest": null,
+    "details": {
+      "parent_model": "/Users/runner/.ollama/models/blobs/sha256-6c02683809a8dc4eb05c78d44bc63bcd707703b078998fa58829c858ab337bb0",
+      "format": "gguf",
+      "family": "granite",
+      "families": [
+        "granite"
+      ],
+      "parameter_size": "3.4B",
+      "quantization_level": "Q4_K_M"
+    }
+  },
+  "vram": {
+    "size_vram_gib": 4.647333983331919,
+    "gpu_delta_mib": 5343,
+    "vram_gib": 5.2177734375
+  },
+  "thresholds": {
+    "answer_correctness": 0.9,
+    "refusal_correctness": 0.9,
+    "tool_format_correctness": 0.95,
+    "vram_gib": 16.0
+  },
+  "passed": false,
+  "failed_thresholds": [
+    "answer_correctness",
+    "refusal_correctness"
+  ],
+  "idle_check": {
+    "tolerance_mib": 2048,
+    "waits": 15,
+    "waited_seconds": 450.0,
+    "discarded_blocks": 0
+  }
+}

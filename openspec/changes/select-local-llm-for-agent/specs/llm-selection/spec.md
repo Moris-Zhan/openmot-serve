@@ -37,7 +37,7 @@
 - **THEN** 合成序列的題目涵蓋空結果、單一身分、身分中斷後重現、同一影格大量身分
 
 ### Requirement: Each candidate is scored on four metrics over repeated trials without a single combined score
-每個候選 SHALL 以溫度 0、固定的隨機種子，對每一題執行 3 次，所有次數都計入統計。評分 SHALL 回報四項指標：工具呼叫格式正確率（工具名稱屬於固定集合且參數通過型別與必填檢查）、答案正確率、拒答正確率（不可回答的題目必須拒答並指出正確類別，可回答的題目不得拒答）、延遲中位數。SHALL NOT 把它們合成單一分數。每次試驗的原始結果 SHALL 被保存。
+每個候選 SHALL 以溫度 0、固定的隨機種子，對每一題執行 3 次，所有次數都計入統計。評分 SHALL 回報四項指標：工具呼叫格式正確率（工具名稱屬於固定集合且參數通過型別與必填檢查）、答案正確率、拒答正確率（只計不可回答的題目：必須拒答並指出正確類別；對可回答的題目拒答則計入答案正確率，見下方情境）、延遲中位數。SHALL NOT 把它們合成單一分數。每次試驗的原始結果 SHALL 被保存。
 
 #### Scenario: A malformed tool call is counted
 - **WHEN** 模型呼叫不存在的工具，或缺少必填參數
@@ -72,6 +72,21 @@
 #### Scenario: An oversized model is reported but not selected
 - **WHEN** 某候選載入後超過 16 GB
 - **THEN** 報告記錄它的指標，並註明因顯存不可與 worker 共存而不作為預設
+
+### Requirement: Measurements are taken only while no other process is using the GPU
+評估與 worker 顯存量測 SHALL 只在沒有其他程序使用 GPU 時進行：被評估的模型以外的 GPU 記憶體用量超過容許值（預設 2048 MiB）時，SHALL 暫停並輪詢等待，不得開始量測。每一題的三次試驗結束後 SHALL 再檢查一次；在量測期間有其他程序出現時，該題的試驗 SHALL 被丟棄並在 GPU 空閒後重做（最多三次，仍被干擾則評估失敗並回報）。無法讀取 GPU 記憶體時 SHALL 拒絕執行，等待超過上限時 SHALL 失敗並回報。摘要 SHALL 記錄等待次數、等待秒數與被丟棄的題目區塊數。
+
+#### Scenario: The evaluation waits for another process to finish
+- **WHEN** 開始評估時另一個程序佔用 GPU
+- **THEN** 評估不送出任何問題，持續輪詢直到 GPU 空閒才開始，摘要記錄等待次數與秒數
+
+#### Scenario: A disturbed block is measured again
+- **WHEN** 某一題的三次試驗期間有其他程序開始使用 GPU
+- **THEN** 該題的試驗不被計入統計，在 GPU 空閒後重做，摘要記錄被丟棄的區塊數
+
+#### Scenario: The GPU state cannot be verified
+- **WHEN** 無法讀取 GPU 記憶體
+- **THEN** 評估拒絕開始並說明無法確認 GPU 是否空閒
 
 ### Requirement: Candidates are confirmed by the user before anything is pulled
 候選模型 SHALL 先經查證（支援工具呼叫、本機可跑、授權清楚，優先 Apache 2.0 或 MIT），並向使用者列出來源、大小與授權及預計的下載總量。在使用者確認名單之前，SHALL NOT 拉取任何模型。

@@ -1,0 +1,6 @@
+{
+  "load_delta_mib": 922,
+  "run_delta_mib": 1360,
+  "source_run": "llm-eval-worker-20261119T075710Z",
+  "precision": "fp16"
+}
