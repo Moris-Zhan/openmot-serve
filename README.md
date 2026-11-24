@@ -110,6 +110,12 @@ docker compose -f deploy/docker/docker-compose.yml ps    # wait until all three 
 python -c "import httpx; print(httpx.get('http://127.0.0.1:8000/health').json())"    # {'status': 'ok'}
 ```
 
+If the worker keeps restarting and its log says `Is a directory`, the Docker daemon cannot see the host path of the weights (for example inside a Kubernetes pod, or when `/mnt` is NFS) and mounted an empty directory instead. Put the weights in the `openmot-weights` volume (steps in the weights section of [`docs/service.md`](docs/service.md)) and add the volume override:
+
+```bash
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.weights-volume.yml up -d --build
+```
+
 The api is published on the host's `127.0.0.1` only, so other machines cannot reach it directly (it has no authentication or TLS). From another computer, open an SSH tunnel and use `http://127.0.0.1:8000` there:
 
 ```bash
